@@ -20,12 +20,15 @@
    All stages are idempotent and write manifests per spec §5.3."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
+            [clojure.data.csv :as csv]
             [cheshire.core :as json]
+            [clj-http.client :as http]
             [promptbench.pipeline.sources :as sources]
             [promptbench.pipeline.manifest :as manifest]
             [promptbench.pipeline.splitter :as splitter]
             [promptbench.python.embed :as embed]
             [promptbench.python.cluster :as cluster]
+            [promptbench.python.parquet :as parquet]
             [promptbench.util.crypto :as crypto])
   (:import [java.nio.file Files Paths StandardCopyOption]
            [java.text Normalizer Normalizer$Form]))
@@ -133,6 +136,117 @@
           (line-seq rdr))))
 
 ;; ============================================================
+;; CSV Reading
+;; ============================================================
+
+(defn- read-csv-file
+  "Read a CSV file and return a vector of maps.
+   The first row is treated as headers, converted to keywords.
+   Returns maps with keyword keys."
+  [^String path]
+  (with-open [rdr (io/reader path)]
+    (let [data (csv/read-csv rdr)
+          headers (map keyword (first data))
+          rows (rest data)]
+      (into []
+            (map (fn [row]
+                   (zipmap headers row)))
+            rows))))
+
+;; ============================================================
+;; Parquet Reading (via Python bridge)
+;; ============================================================
+
+(defn- read-parquet-file
+  "Read a Parquet file and return a vector of maps with keyword keys.
+   Uses polars via the Python bridge."
+  [^String path]
+  (parquet/read-parquet path))
+
+;; ============================================================
+;; Format-Dispatched Reading
+;; ============================================================
+
+(defn- read-source-file
+  "Read a source file from data/raw/ based on the source's declared format.
+
+   Dispatches to:
+   - :jsonl   → read-jsonl (JSON lines)
+   - :csv     → read-csv-file (CSV with header row)
+   - :parquet → read-parquet-file (Parquet via polars/libpython-clj)
+   - :edn     → clojure.edn/read-string
+
+   Returns a vector of maps with keyword keys."
+  [^String path format]
+  (case format
+    :jsonl   (read-jsonl path)
+    :csv     (read-csv-file path)
+    :parquet (read-parquet-file path)
+    :edn     (clojure.edn/read-string (slurp path))
+    (throw (ex-info (str "Unsupported source format: " format)
+                    {:format format :path path}))))
+
+;; ============================================================
+;; Field Extraction from Source Records
+;; ============================================================
+
+(defn- extract-text-field
+  "Extract the text field from a source record using field-mapping.
+
+   Checks :field-mapping for a key that maps to :text.
+   Falls back to :prompt or 'prompt' for backwards compatibility."
+  [row source-data]
+  (let [field-mapping (:field-mapping source-data)
+        ;; Find which source column maps to :text
+        text-source-key (when field-mapping
+                          (some (fn [[k v]] (when (= v :text) k)) field-mapping))]
+    (if text-source-key
+      ;; Use field-mapping: try keyword first, then string
+      (or (get row text-source-key)
+          (get row (name text-source-key))
+          "")
+      ;; Fallback: legacy JSONL convention (prompt field)
+      (or (:prompt row) (get row "prompt") ""))))
+
+(defn- extract-language-field
+  "Extract the language field from a source record.
+
+   Checks :field-mapping for a key that maps to :language.
+   Falls back to :default-language from source-data, then 'en'."
+  [row source-data]
+  (let [field-mapping (:field-mapping source-data)
+        lang-source-key (when field-mapping
+                          (some (fn [[k v]] (when (= v :language) k)) field-mapping))
+        default-lang (or (:default-language source-data) "en")]
+    (if lang-source-key
+      ;; Use field-mapping: try keyword first, then string
+      (let [val (or (get row lang-source-key)
+                    (get row (name lang-source-key)))]
+        (if (and val (not (str/blank? (str val))))
+          (str val)
+          default-lang))
+      ;; Fallback: legacy JSONL convention (language field), then default
+      (or (some-> (or (:language row) (get row "language"))
+                  str
+                  (#(when-not (str/blank? %) %)))
+          default-lang))))
+
+(defn- extract-harm-category-field
+  "Extract the harm category field from a source record using field-mapping.
+
+   Checks :field-mapping for a key mapping to :harm-category.
+   Falls back to :harm_category for backwards compatibility."
+  [row source-data]
+  (let [field-mapping (:field-mapping source-data)
+        harm-source-key (when field-mapping
+                          (some (fn [[k v]] (when (= v :harm-category) k)) field-mapping))]
+    (if harm-source-key
+      (or (get row harm-source-key)
+          (get row (name harm-source-key)))
+      ;; Fallback: legacy convention
+      (or (:harm_category row) (get row "harm_category")))))
+
+;; ============================================================
 ;; Cross-Source Deduplication
 ;; ============================================================
 
@@ -207,11 +321,34 @@
 ;; Stage 0: Fetch
 ;; ============================================================
 
+(defn- download-url!
+  "Download a file from a URL to a local destination path.
+
+   Uses clj-http with :as :byte-array to handle both text (CSV) and
+   binary (Parquet) formats correctly. Follows redirects.
+
+   Throws on HTTP errors (non-2xx status)."
+  [^String url ^String dest-path]
+  (let [resp (http/get url {:as :byte-array
+                            :redirect-strategy :lax
+                            :socket-timeout 60000
+                            :connection-timeout 30000})]
+    (when-not (<= 200 (:status resp) 299)
+      (throw (ex-info (str "HTTP fetch failed with status " (:status resp)
+                           " for URL: " url)
+                      {:url url :status (:status resp)})))
+    (io/copy (:body resp) (io/file dest-path))
+    dest-path))
+
 (defn fetch!
   "Stage 0: Fetch source datasets.
 
    For each source in :sources, copies/downloads the data to data/raw/
    with a deterministic filename based on the source name.
+
+   Supports:
+   - :path sources — copies local files
+   - :url sources  — downloads from HTTP(S) URLs (CSV, Parquet, JSONL)
 
    Config map keys:
    :sources   — vector of source keywords to fetch
@@ -239,14 +376,33 @@
                             fmt (name (:format source-data))
                             dest-filename (str (name source-name) "." fmt)
                             dest-path (str raw-dir "/" dest-filename)
-                            ;; Determine the actual source file
-                            src-path (or (:path source-data)
-                                         (throw (ex-info
-                                                  (str "URL fetching not implemented yet. "
-                                                       "Source " source-name " requires :path for local files.")
-                                                  {:source source-name})))]
-                        ;; Copy source to raw directory
-                        (io/copy (io/file src-path) (io/file dest-path))
+                            src-path (:path source-data)
+                            src-url  (:url source-data)]
+                        ;; Fetch: prefer path (local), fallback to URL download
+                        (cond
+                          ;; Local path — copy file
+                          (and src-path (.exists (io/file src-path)))
+                          (io/copy (io/file src-path) (io/file dest-path))
+
+                          ;; URL — download from remote
+                          src-url
+                          (do
+                            (binding [*out* *err*]
+                              (println (str "Fetching " (name source-name)
+                                            " from " src-url "...")))
+                            (download-url! src-url dest-path))
+
+                          ;; Local path specified but file doesn't exist
+                          src-path
+                          (throw (ex-info (str "Source file not found: " src-path
+                                               " for source " source-name)
+                                          {:source source-name :path src-path}))
+
+                          ;; Neither path nor URL
+                          :else
+                          (throw (ex-info (str "Source " source-name
+                                               " has neither :path nor :url")
+                                          {:source source-name})))
                         [source-name dest-path])))
         ;; Compute checksums for all fetched files
         checksums (into {}
@@ -332,26 +488,49 @@
                             (throw (ex-info (str "Raw file not found: " raw-file
                                                   ". Run fetch! first.")
                                             {:source source-name :file raw-file})))
-                        rows (read-jsonl raw-file)]
+                        rows (read-source-file raw-file fmt)
+                        ;; Check if this is a toxicchat-style source (has toxicity + jailbreaking columns)
+                        has-toxicity-cols? (and (contains? (:schema source-data) :toxicity)
+                                               (contains? (:schema source-data) :jailbreaking))]
                     (map-indexed
                       (fn [idx row]
-                        (let [raw-text (or (:prompt row) (get row "prompt") "")
-                              lang-str (or (:language row) (get row "language") "en")
+                        (let [raw-text (extract-text-field row source-data)
+                              lang-str (extract-language-field row source-data)
+                              raw-harm (extract-harm-category-field row source-data)
                               row-id (or (:row_id row) (get row "row_id") idx)
                               ;; Normalize text
-                              canon-text (normalize-text raw-text)
+                              canon-text (normalize-text (str raw-text))
                               ;; Compute canonical hash
                               c-hash (sha256-string canon-text)
                               ;; Compute source ID
                               hash-prefix (subs c-hash 0 (min 16 (count c-hash)))
                               s-id (compute-source-id (name source-name) row-id hash-prefix)
+                              ;; Build a record with the harm category field for taxonomy resolution
+                              record-for-taxonomy (cond-> row
+                                                    raw-harm (assoc :harm_category raw-harm))
                               ;; Resolve taxonomy labels
-                              taxonomy (resolve-taxonomy row source-data)]
+                              taxonomy (resolve-taxonomy record-for-taxonomy source-data)
+                              ;; For ToxicChat-style sources, derive intent from toxicity/jailbreaking
+                              intent-label (if has-toxicity-cols?
+                                             (let [get-int (fn [row k]
+                                                             (let [v (if (contains? row k)
+                                                                       (get row k)
+                                                                       (get row (name k)))]
+                                                               (cond (nil? v) 0
+                                                                     (string? v) (or (parse-long v) 0)
+                                                                     (number? v) (long v)
+                                                                     :else 0)))
+                                                   toxicity     (get-int row :toxicity)
+                                                   jailbreaking (get-int row :jailbreaking)]
+                                               (if (or (= 1 jailbreaking) (= 1 toxicity))
+                                                 :adversarial
+                                                 :benign))
+                                             (:intent-label taxonomy))]
                           {:source-id      s-id
                            :canonical-hash c-hash
                            :canonical-text canon-text
                            :canonical-lang (keyword lang-str)
-                           :intent-label   (:intent-label taxonomy)
+                           :intent-label   intent-label
                            :attack-family  (:attack-family taxonomy)
                            :harm-category  (:harm-category taxonomy)
                            :source         {:dataset source-name
