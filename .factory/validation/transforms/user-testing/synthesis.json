@@ -1,0 +1,83 @@
+{
+  "milestone": "transforms",
+  "round": 1,
+  "status": "pass",
+  "note": "No interactive user surface exists for this milestone. Project uses scrutiny-only validation per mission guidance (AGENTS.md: 'Scrutiny only — no user-testing validator (no UI surface)'). All assertions verified through automated test suite (clj -M:test) — the only user surface for this Clojure DSL library. 280 tests, 2013 assertions, 0 failures, 0 errors (with PROXY_AUTH_TOKEN set for MT proxy tests).",
+  "assertionsSummary": {
+    "total": 9,
+    "passed": 9,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-XFORM-001",
+    "VAL-XFORM-002",
+    "VAL-XFORM-003",
+    "VAL-XFORM-004",
+    "VAL-XFORM-005",
+    "VAL-XFORM-006",
+    "VAL-XFORM-007",
+    "VAL-XFORM-008",
+    "VAL-XFORM-009"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null,
+  "validationMethod": "automated-test-suite",
+  "testSuiteResults": {
+    "command": "source .env && export PROXY_AUTH_TOKEN && LD_LIBRARY_PATH=<nvidia-libs> clj -M:test",
+    "testCount": 280,
+    "assertionCount": 2013,
+    "failures": 0,
+    "errors": 0,
+    "exitCode": 0
+  },
+  "assertionCoverage": {
+    "VAL-XFORM-001": {
+      "method": "test-suite",
+      "evidence": "transform_engine_test.clj covers exhaustion-output-validity-test, homoglyph-output-validity-test, codemix-output-validity-test — each verifies non-empty text different from input and canonical shape {:text :metadata} with required metadata keys. transform_mt_test.clj covers mt-output-validity-test.",
+      "testFiles": ["test/promptbench/transform_engine_test.clj", "test/promptbench/transform_mt_test.clj"]
+    },
+    "VAL-XFORM-002": {
+      "method": "test-suite",
+      "evidence": "transform_engine_test.clj covers exhaustion-seed-determinism-test, homoglyph-seed-determinism-test, codemix-seed-determinism-test (same seed = same output). transform_mt_test.clj covers mt-sends-temperature-zero-and-seed-test and mt-deterministic-false-documented-test (MT uses temperature=0 + seed for maximal reproducibility, :deterministic false is documented).",
+      "testFiles": ["test/promptbench/transform_engine_test.clj", "test/promptbench/transform_mt_test.clj"]
+    },
+    "VAL-XFORM-003": {
+      "method": "test-suite",
+      "evidence": "transform_engine_test.clj covers two-transform-chain-composition-test, chain-metadata-accumulation-test, chain-order-sensitivity-test, def-transform-chain-registration-test, def-transform-chain-validates-step-references-test, def-transform-chain-preserves-order-test, execute-named-chain-test.",
+      "testFiles": ["test/promptbench/transform_engine_test.clj"]
+    },
+    "VAL-XFORM-004": {
+      "method": "test-suite",
+      "evidence": "transform_engine_test.clj covers variant-record-completeness-test (all fields: variant-id, source-id, text, variant-type, transform-chain, transform-seed, metadata, split), variant-record-source-linkage-test, variant-record-split-inheritance-test, variant-id-determinism-test, variant-id-differs-for-different-content-test.",
+      "testFiles": ["test/promptbench/transform_engine_test.clj"]
+    },
+    "VAL-XFORM-005": {
+      "method": "test-suite",
+      "evidence": "transform_mt_test.clj covers mt-tier1-languages-test (proxy routing to 127.0.0.1:8789, tier-1 language translations), mt-metadata-contains-provenance-test, mt-proxy-error-handling-test (proxy unavailability produces domain-specific error).",
+      "testFiles": ["test/promptbench/transform_mt_test.clj"]
+    },
+    "VAL-XFORM-006": {
+      "method": "test-suite",
+      "evidence": "transform_engine_test.clj covers codemix-inter-sentential-test (switches at sentence boundaries), codemix-intra-sentential-test (mixes within sentences), codemix-rate-tolerance-test (rate within ±15%).",
+      "testFiles": ["test/promptbench/transform_engine_test.clj"]
+    },
+    "VAL-XFORM-007": {
+      "method": "test-suite",
+      "evidence": "transform_engine_test.clj covers homoglyph-valid-pairs-test (different Unicode blocks), homoglyph-nfkc-reversible-test (NFKC normalization roundtrip), homoglyph-rate-tolerance-test (rate within ±5%).",
+      "testFiles": ["test/promptbench/transform_engine_test.clj"]
+    },
+    "VAL-XFORM-008": {
+      "method": "test-suite",
+      "evidence": "transform_engine_test.clj covers exhaustion-prefix-position-test, exhaustion-suffix-position-test, exhaustion-interleaved-position-test, exhaustion-length-tolerance-test (within ±10%), exhaustion-original-preserved-test, exhaustion-reversible-test.",
+      "testFiles": ["test/promptbench/transform_engine_test.clj"]
+    },
+    "VAL-XFORM-009": {
+      "method": "test-suite",
+      "evidence": "transform_pipeline_test.clj covers tier1-mt-coverage-test (all 10 languages for high-affinity), tier2-mt-absent-without-flag-test, tier2-mt-present-with-flag-test, eval-suites-test-only-scope-test, tier1-mt-manifest-fields-test, tier1-mt-idempotent-test, eval-suites-idempotent-test, variant-source-id-lineage-test, variant-split-inheritance-test, eval-suites-scope-all-test, eval-suites-unknown-scope-test, tier2-mt-idempotent-test.",
+      "testFiles": ["test/promptbench/transform_pipeline_test.clj"]
+    }
+  }
+}
