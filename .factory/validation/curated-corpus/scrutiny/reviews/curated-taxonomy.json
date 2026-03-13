@@ -1,0 +1,39 @@
+{
+  "featureId": "curated-taxonomy",
+  "reviewedAt": "2026-03-13T21:45:00.000Z",
+  "commitId": "ba654ff",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Solid implementation that fully covers the feature requirements. Three attack families (persona-injection, authority-impersonation, developer-mode) are correctly registered as descendants of :jailbreak via :identity-manipulation. persona-injection has all specified fields: description, category :jailbreak, severity :high, parent :identity-manipulation, tags, 3 signatures (nested-system-prompt, identity-override, safety-reframe), transforms with MT :high and code-mix :high, and gen-hints with persona-names/emotional-hooks/structural-elements. Three curated JSONL sources are defined with correct paths, GPL-3.0 licensing, and taxonomy mappings. Data files contain 18 well-crafted adversarial prompts (8+5+5) exceeding minimums. 17 tests with 127 assertions provide comprehensive coverage of registry queries, hierarchy traversal, source definitions, JSONL parsing, and taxonomy mapping. The implementation correctly uses the existing DSL macros (def-attack-family, def-harm-category) and source registry API (register-source!). One non-blocking convention violation found.",
+    "issues": [
+      {
+        "file": "test/promptbench/curated_taxonomy_test.clj",
+        "line": 162,
+        "severity": "non_blocking",
+        "description": "Uses clojure.string/trim and clojure.string/blank? (lines 162-163, 188-189, 207-208) without requiring clojure.string in the ns form. This violates the AGENTS.md convention: 'Always use explicit :require with aliases in ns forms. Never rely on transitive namespace loading.' The test works because clojure.string is loaded transitively by other namespaces, but this is fragile. Fix: add [clojure.string :as str] to the :require and use str/trim, str/blank?."
+      },
+      {
+        "file": "src/promptbench/corpus/curated.clj",
+        "line": 168,
+        "severity": "non_blocking",
+        "description": "The idempotent guard in register-all! only checks (registry/get-family :persona-injection). If categories are registered by another namespace before families are registered, register-all! would call register-categories! and throw on duplicates. Currently not an issue since curated.clj is the sole registrant of :adversarial, :jailbreak, and :identity-manipulation categories, but the guard could be made more robust by also checking category existence."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Worker used clojure.string functions without explicit require in the test file, violating the 'Explicit requires' convention in AGENTS.md. The convention is documented but the worker did not follow it for the test file's transducer JSONL parsing code. This suggests the convention may need reinforcement or the skill's test-writing procedure could mention it.",
+      "evidence": "test/promptbench/curated_taxonomy_test.clj lines 162-163, 188-189, 207-208 use clojure.string/trim and clojure.string/blank? without [clojure.string] in ns :require. AGENTS.md says: 'Always use explicit :require with aliases in ns forms.'"
+    },
+    {
+      "area": "knowledge",
+      "observation": "The data/curated/ directory structure is a new pattern introduced by this feature. It establishes a convention for local curated datasets: data/curated/<family-name>/prompts.jsonl with a fixed JSONL schema {prompt, language, family, harm_category}. This pattern will be reused by subsequent curated-corpus features and could be documented in the library.",
+      "evidence": "Three new directories created: data/curated/persona-injections/, data/curated/authority-escalation/, data/curated/developer-mode/ — each with prompts.jsonl following the same schema."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The curated-taxonomy feature is well-implemented and passes review. All three attack families are correctly registered with proper hierarchy (descendants of :jailbreak via :identity-manipulation). persona-injection has all required fields including signatures, transforms with correct affinities, and gen-hints. Source definitions are properly registered with JSONL format, GPL-3.0 licensing, and taxonomy mappings. Data files contain 18 high-quality adversarial prompts meeting the quantity requirements. Tests are comprehensive with 17 cases and 127 assertions. One non-blocking issue: the test file uses clojure.string without explicit require, violating project conventions. The implementation follows the skill procedure (read spec, write tests, implement, verify full suite) and the worker reported accurate results."
+}

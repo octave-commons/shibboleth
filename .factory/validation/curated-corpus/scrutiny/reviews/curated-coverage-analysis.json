@@ -1,0 +1,51 @@
+{
+  "featureId": "curated-coverage-analysis",
+  "reviewedAt": "2026-03-13T22:10:00.000Z",
+  "commitId": "3eaa3c0",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation correctly adds 4 new functions to coverage.clj (source-contribution, transform-gap-analysis, format-gap-analysis-markdown, format-source-contribution-markdown) and a comprehensive test file with 14 tests covering all VAL-CORPUS-005 assertions. The source-contribution function properly compares taxonomy-coverage with/without specified sources, returning delta and uniquely-contributed families. The transform-gap-analysis correctly cross-references variant coverage against family transform affinities, excludes :none affinity, and flags high-affinity gaps as priority. Both markdown formatters use deterministic sort ordering. The test suite thoroughly covers curated families appearing as covered, coverage reduction on source removal, gap analysis with affinity justification, :none exclusion, full coverage detection, and final bundle completeness. No regressions introduced (0 failures in full 412-test suite, same 4 pre-existing MT proxy errors).",
+    "issues": [
+      {
+        "file": "test/promptbench/curated_coverage_analysis_test.clj",
+        "line": 18,
+        "severity": "non_blocking",
+        "description": "Unused requires: `promptbench.corpus.curated` (aliased as `curated`) and `promptbench.report.core` (aliased as `report`) are required in the ns form but never referenced in any test body. Only `sources/reset!` is used from the non-coverage requires. These should be removed to keep the ns form clean."
+      },
+      {
+        "file": "test/promptbench/curated_coverage_analysis_test.clj",
+        "line": 42,
+        "severity": "non_blocking",
+        "description": "Test helper `make-prompt` uses `(random-uuid)` for `:source-id` and `:canonical-hash`, making test data non-deterministic across runs. While these fields aren't used in coverage calculations so tests are functionally correct, this conflicts with the project's determinism convention. A seeded UUID generator or fixed strings would be more consistent."
+      },
+      {
+        "file": "src/promptbench/metrics/coverage.clj",
+        "line": 118,
+        "severity": "non_blocking",
+        "description": "source-contribution computes coverage-delta as `(- (double ...) (double ...))` which converts Clojure exact ratios to floating-point. For typical family counts this is fine, but with many families the conversion could introduce small FP artifacts (e.g., 0.5999999... instead of 0.6). The rest of the codebase uses ratios natively; consider keeping the delta as a ratio for consistency, or documenting the intentional coercion."
+      },
+      {
+        "file": "src/promptbench/metrics/coverage.clj",
+        "line": 200,
+        "severity": "non_blocking",
+        "description": "format-source-contribution-markdown defines a local `fmt` closure wrapping `clojure.core/format`. Since there's no name collision in this ns, `format` could be called directly. Minor style nit."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Worker used `(random-uuid)` in test helpers for non-critical fields. AGENTS.md states 'All randomness must be seeded' and 'All functions returning collections that feed into pipeline stages MUST return deterministically-ordered results.' While test helpers aren't pipeline code, previous test files may use the same pattern — the convention could be clarified to explicitly scope determinism requirements (pipeline code vs test scaffolding).",
+      "evidence": "test/promptbench/curated_coverage_analysis_test.clj:42 — `(str (random-uuid))` in make-prompt helper for :source-id and :canonical-hash fields"
+    },
+    {
+      "area": "conventions",
+      "observation": "The new source-contribution and transform-gap-analysis functions are analysis utilities, not registered metrics. The architecture doc notes the def-metric pattern but doesn't distinguish between registered metrics and standalone analysis functions. This is a new pattern that could be documented.",
+      "evidence": "src/promptbench/metrics/coverage.clj — source-contribution and transform-gap-analysis are standalone functions not registered via register-coverage-metrics!, unlike the three original coverage metrics"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "PASS. The implementation correctly fulfills VAL-CORPUS-005 with 4 new functions and 14 comprehensive tests. source-contribution accurately shows coverage delta when curated sources are removed. transform-gap-analysis correctly identifies per-family transform gaps with affinity-based justification, excludes :none affinity, and flags high-priority gaps. Markdown formatters produce deterministically-ordered output. No regressions. 4 non-blocking issues noted: 2 unused requires in test file, random UUIDs in test helpers, and FP coercion in coverage-delta. Worker followed TDD procedure correctly."
+}

@@ -75,6 +75,22 @@ The `def-metric` macro (in `promptbench.metrics.core`) registers metrics in an a
 
 **CLI verify/coverage trigger builds**: The `promptbench verify` and `promptbench coverage` CLI commands call `pipeline/build!` internally to obtain data, rather than reading existing build artifacts from disk. If no prior build exists, these commands will execute the full pipeline. This is intentional (build! skips completed stages) but means they are not purely read-only operations.
 
+## Curated Corpus Pattern
+
+Local curated datasets live in `data/curated/<family-name>/prompts.jsonl`. Each JSONL file follows the schema `{prompt, language, family, harm_category}`. Sources are defined with `:format :jsonl`, `:url nil`, and `:path` pointing to the directory. License is `:gpl-3.0` for curated content.
+
+Three curated families established: `persona-injections/`, `authority-escalation/`, `developer-mode/`.
+
+## Cross-Source Deduplication
+
+`promptbench.pipeline.stages/deduplicate-cross-source` detects duplicates by canonical-hash across source boundaries. **Policy: curated sources are preferred** — when a prompt appears in both a public dataset and a curated source, the curated version is kept. The function is integrated into `canonicalize!` and returns a `:dedup-report` key in the stage result map.
+
+**Note:** `canonicalize!` now returns `{:manifest ... :records ... :dedup-report ...}` — the `:dedup-report` key was added during the curated-corpus milestone.
+
+## Analysis Functions vs Registered Metrics
+
+Coverage analysis added `source-contribution` and `transform-gap-analysis` as standalone functions in `promptbench.metrics.coverage`, not registered via `def-metric` / `register-coverage-metrics!`. These are analysis utilities (not pipeline metrics) and are called directly by the CLI coverage report.
+
 ## Spec Reference
 
 Full DSL design: `/home/err/devel/specs/drafts/guardrail-promptbench-dsl.md`

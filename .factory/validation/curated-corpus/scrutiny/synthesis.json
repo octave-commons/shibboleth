@@ -1,0 +1,70 @@
+{
+  "milestone": "curated-corpus",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "source .env && export PROXY_AUTH_TOKEN && bash -c 'NVIDIA_BASE=\"$(python3 -c \"import sys,os;print(os.path.join(sys.prefix,\\\"lib\\\",f\\\"python{sys.version_info.major}.{sys.version_info.minor}\\\",\\\"site-packages\\\",\\\"nvidia\\\"))\" 2>/dev/null||true)\" && if [ -d \"${NVIDIA_BASE:-}\" ]; then for d in \"$NVIDIA_BASE\"/*/lib; do [ -d \"$d\" ] && LD_LIBRARY_PATH=\"$d:${LD_LIBRARY_PATH:-}\"; done; export LD_LIBRARY_PATH; fi && clj -M:test'",
+      "exitCode": 0,
+      "note": "418 tests, 3129 assertions, 0 failures, 0 errors. Without PROXY_AUTH_TOKEN, 4 MT tests error (known env issue, not a code bug)."
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "N/A",
+      "exitCode": 0,
+      "note": "Clojure is dynamically typed. No typecheck validator per AGENTS.md."
+    },
+    "lint": {
+      "passed": true,
+      "command": "echo 'No linter configured yet'",
+      "exitCode": 0,
+      "note": "No linter configured in services.yaml."
+    }
+  },
+  "reviewsSummary": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Documented curated corpus data pattern (data/curated/<family>/prompts.jsonl schema), cross-source dedup policy (curated preferred), canonicalize! return shape change (:dedup-report key), and analysis-functions-vs-metrics distinction in architecture.md",
+      "sourceFeature": "curated-pipeline-integration, curated-coverage-analysis, curated-taxonomy"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Reinforce the explicit-requires convention with a note that it applies to test files as well as source files. Multiple workers across milestones have consistently violated 'Always use explicit :require with aliases in ns forms' in test code. Consider adding: 'This applies to ALL Clojure files including test files — never rely on transitive namespace loading even in tests.'",
+      "evidence": "curated-taxonomy: test uses clojure.string without require (lines 162-163). end-to-end-validation: test uses clojure.set/intersection without require. Same pattern found in prior milestones (pipeline-spine, misc-pipeline-fixes). At least 4 separate workers have made this mistake.",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Consider adding guidance on test fixture management: 'For integration/e2e tests requiring taxonomy definitions, prefer a shared test-fixture namespace over duplicating taxonomy setup in each test file.' Multiple test files (e2e_test, curated_pipeline_integration_test, curated_taxonomy_test) independently re-register the same taxonomy families/categories. If taxonomy shapes change, all test files need synchronized updates.",
+      "evidence": "end-to-end-validation: e2e_test.clj lines 62-157 redefine full taxonomy from scratch. curated_pipeline_integration_test.clj has similar extensive taxonomy setup. Same pattern across multiple test files.",
+      "isSystemic": true
+    },
+    {
+      "target": "skills",
+      "suggestion": "The clojure-dsl-worker skill should note: (1) :params-spec is required when registering transforms — workers discover this by reading transform/registry.clj source code. (2) Mock MT pattern (with-redefs on translate-via-proxy) is the standard approach for e2e/integration tests to avoid proxy dependency — see transform_pipeline_test.clj for the established pattern.",
+      "evidence": "curated-pipeline-integration: worker skill feedback about params-spec discovery. end-to-end-validation: worker skill feedback about mock MT pattern.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "random-uuid in test helpers violates determinism convention",
+      "reason": "The AGENTS.md determinism convention ('All randomness must be seeded') is scoped to pipeline-producing code, not test scaffolding. Using random-uuid for non-critical test fixture fields (source-id, canonical-hash in coverage tests) is acceptable when those fields don't affect the computation under test. Codifying this as a convention change would add unnecessary constraint."
+    },
+    {
+      "observation": "Unregistered analysis function pattern needs convention documentation",
+      "reason": "Already documented in the library update (architecture.md). The distinction between registered metrics and analysis utilities is clear from the code and now from the docs. No AGENTS.md change needed."
+    }
+  ],
+  "previousRound": null
+}

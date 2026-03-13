@@ -1,0 +1,44 @@
+{
+  "featureId": "curated-pipeline-integration",
+  "reviewedAt": "2026-03-13T22:15:00.000Z",
+  "commitId": "cbca4ee",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Solid implementation. All 3 curated sources added to v1.edn. Cross-source deduplication implemented with a well-documented curated-preferred policy, integrated into the canonicalize! stage. Source versions tracked in build manifest via cond-> for backward compatibility. CLI and bundle passthrough implemented correctly. 20 tests with 474 assertions cover all validation contract requirements (VAL-CORPUS-003, VAL-CORPUS-004, VAL-CORPUS-006). Deterministic ordering ensured throughout via sorted-map in dedup and sorted source iteration. No regressions — full suite passes (398 tests, 4 pre-existing MT proxy errors only).",
+    "issues": [
+      {
+        "file": "src/promptbench/pipeline/stages.clj",
+        "line": 155,
+        "severity": "non_blocking",
+        "description": "deduplicate-cross-source uses `(name (get-in r [:source :dataset] :unknown))` — if a record somehow has a nil :source map (not just nil :dataset), `get-in` returns nil and the :unknown default isn't used because the path fails at :source. In practice canonicalize! always populates :source, so this is theoretical, but a more defensive `(name (or (get-in r [:source :dataset]) :unknown))` would be marginally safer."
+      },
+      {
+        "file": "test/promptbench/curated_pipeline_integration_test.clj",
+        "line": 66,
+        "severity": "non_blocking",
+        "description": "register-test-transforms! uses empty maps for :params-spec. While this works (no spec validation fails on empty maps), it diverges from how real transforms define params-spec. The worker noted this in skillFeedback — a comment in the test explaining this is intentional for test fixtures would improve clarity."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The cross-source deduplication policy (curated sources preferred over public when same canonical-hash detected) is a new architectural decision that should be documented in .factory/library/architecture.md. Currently the policy is only documented in the deduplicate-cross-source docstring. Future workers modifying dedup behavior need to find this.",
+      "evidence": "src/promptbench/pipeline/stages.clj:139-149 — policy documented only in function docstring; .factory/library/architecture.md has no mention of dedup strategy"
+    },
+    {
+      "area": "skills",
+      "observation": "Worker's skillFeedback suggests documenting that :params-spec is required in transform registration. The clojure-dsl-worker skill doesn't mention this, and the worker hit this issue during test fixture setup (had to look at transform/registry.clj source to discover the requirement).",
+      "evidence": "Handoff skillFeedback.suggestedChanges: 'The clojure-dsl-worker skill could benefit from noting that :params-spec is required in transform registration'. Transcript shows worker read transform/registry.clj to discover the requirement."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The canonicalize! stage now returns a :dedup-report key in its result map (in addition to :manifest and :records). This is a new return-shape change that affects downstream consumers of canonicalize! output. Should be noted in architecture.md.",
+      "evidence": "src/promptbench/pipeline/stages.clj:401-402 — canonicalize! returns {:manifest ... :records ... :dedup-report ...}, previously only {:manifest ... :records ...}"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature passes review. Implementation fully covers all 7 expectedBehavior items and all 3 validation contract items (VAL-CORPUS-003, VAL-CORPUS-004, VAL-CORPUS-006). The deduplicate-cross-source function is well-designed: deterministic via sorted-map, curated-preferred policy clearly documented, integrated at the correct point in the canonicalize! stage. Source versions flow correctly through CLI → bundle → build manifest with backward compatibility. Tests are comprehensive with 20 cases covering fetch presence, normalization, hashing, license preservation, manifest versioning, dedup detection/policy/no-false-positives/disk-report, reproducibility, and full pipeline flow. Two non-blocking issues noted: a theoretical nil-safety edge case in dedup and undocumented empty params-spec in test transforms. Three shared-state observations raised for the validator to triage."
+}
