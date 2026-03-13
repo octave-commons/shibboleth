@@ -1,0 +1,45 @@
+{
+  "featureId": "misc-dsl-polish",
+  "reviewedAt": "2026-03-13T08:15:00.000Z",
+  "commitId": "9da644c",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "All three fixes are correctly implemented with thorough test coverage. Fix #1 sorts transform-config keys in resolve-transforms for deterministic iteration (uses comp+filter over sorted keys). Fix #2 replaces the loose unsafe polarity :requires validation with a strict count+set equality check that properly rejects duplicates. Fix #3 adds (if (keyword? name) name (keyword (name name))) normalization to all three macros so they accept both bare symbols and keywords. 17 new tests in dsl_polish_test.clj cover all three fixes comprehensively. All 139 tests pass with 898 assertions.",
+    "issues": [
+      {
+        "file": "test/promptbench/dsl_polish_test.clj",
+        "line": 159,
+        "severity": "non_blocking",
+        "description": "unsafe-label-rejects-nil-requires-test and unsafe-label-rejects-empty-requires-test use (thrown? Exception ...) without message matching, while all other rejection tests use (thrown-with-msg? Exception #\"requires exactly\" ...). For consistency, these could also use thrown-with-msg? since the error message is the same. Minor style inconsistency."
+      },
+      {
+        "file": "src/promptbench/taxonomy/categories.clj",
+        "line": 28,
+        "severity": "non_blocking",
+        "description": "Namespaced keywords/symbols (e.g. :my-ns/foo) would lose their namespace through the (keyword (name ...)) normalization, since (name :my-ns/foo) returns \"foo\". This pre-existed in def-attack-family and is unlikely to occur in practice since the DSL uses simple keywords. Not a regression — just documenting a latent edge case across all three macros."
+      },
+      {
+        "file": "test/promptbench/dsl_polish_test.clj",
+        "line": 1,
+        "severity": "non_blocking",
+        "description": "Handoff coverage summary says '9 tests' for duplicate-requires and '5 tests' for API standardization, but the actual test file has 8 and 6 respectively. Total count (17) is correct. Minor documentation discrepancy in the handoff, not a code issue."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The clojure-dsl-worker skill prescribes 'Write tests first (RED)' as step 2, but for fix/polish features this doesn't apply cleanly — the fixes modify existing passing code, so new tests are written alongside fixes rather than strictly before. Worker's skillFeedback.suggestedChanges noted this. Consider adding a note to the skill: 'Exception: for fix/polish features targeting existing code, the RED phase may be combined with implementation since the existing code already passes.'",
+      "evidence": "Skill SKILL.md step 2 says 'Write failing tests first (RED)'. Worker's skillFeedback.suggestedChanges: 'Skill could mention that for polish/fix features, the RED phase may not apply cleanly since we're modifying existing code that already passes tests'. Transcript shows worker wrote tests alongside fixes."
+    },
+    {
+      "area": "conventions",
+      "observation": "AGENTS.md already documents the determinism convention ('All functions returning collections that feed into pipeline stages MUST return deterministically-ordered results'), which directly motivated Fix #1. The worker correctly followed this convention. No gap here — just confirming the convention is well-documented and effective.",
+      "evidence": "AGENTS.md Coding Conventions section contains the determinism rule. Fix #1 in registry.clj:299 adds sort to keys iteration."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "All three non-blocking issues from the dsl-foundation scrutiny review are correctly fixed. (1) resolve-transforms now sorts transform-config keys before iteration, producing deterministic output verified by 3 tests including multi-invocation and multi-seed checks. (2) Unsafe polarity :requires validation now uses (= (count requires) 2) AND (= (set requires) #{:attack-family :harm-category}), correctly rejecting duplicates — verified by 8 tests covering duplicate, extra-key, single-key, nil, and empty inputs. (3) All three macros standardized with keyword/symbol normalization — verified by 6 tests. No blocking issues found. Three non-blocking observations noted: test assertion style inconsistency, latent namespaced-keyword edge case, and minor handoff summary count discrepancy."
+}

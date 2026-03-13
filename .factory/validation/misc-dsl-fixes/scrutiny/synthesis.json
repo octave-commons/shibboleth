@@ -1,0 +1,33 @@
+{
+  "milestone": "misc-dsl-fixes",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "clj -M:test", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "N/A (dynamically typed — no typecheck validator per AGENTS.md)", "exitCode": 0 },
+    "lint": { "passed": true, "command": "echo \"No linter configured yet\"", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "skills",
+      "suggestion": "Add exception note to clojure-dsl-worker skill step 2 (RED phase): 'Exception: for fix/polish features targeting existing code, the RED phase may be combined with implementation since the existing code already passes tests. New tests should still be written but may be authored alongside fixes rather than strictly before.'",
+      "evidence": "Feature misc-dsl-polish worker noted in skillFeedback.suggestedChanges that the RED-first TDD procedure doesn't apply cleanly to fix/polish features. The worker wrote tests alongside fixes rather than strictly before, which was pragmatic and produced thorough coverage (17 new tests). This is likely to recur for any future fix/polish features.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "AGENTS.md already documents the determinism convention which motivated Fix #1 (resolve-transforms sorting). Convention is well-documented and effective.",
+      "reason": "already-documented"
+    }
+  ],
+  "previousRound": null
+}
