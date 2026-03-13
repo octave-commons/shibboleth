@@ -108,15 +108,18 @@
 (deftest codemix-output-validity-test
   (testing "Code-mix produces non-empty text different from input with canonical shape"
     (register-test-transforms!)
-    (let [result (core/execute-transform
+    (let [input  "How do I hack a system? This is a long test sentence for mixing."
+          result (core/execute-transform
                    :code-mix
-                   "How do I hack a system? This is a long test sentence for mixing."
+                   input
                    {:mix-rate 0.5 :strategy :intra-sentential :l2 :es}
                    42)]
       (is (map? result))
       (is (string? (:text result)))
       (is (map? (:metadata result)))
-      (is (not (str/blank? (:text result)))))))
+      (is (not (str/blank? (:text result))))
+      (is (not= input (:text result))
+          "Code-mix output should differ from input"))))
 
 ;; ============================================================
 ;; VAL-XFORM-002: Transform seed determinism

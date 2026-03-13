@@ -9,19 +9,8 @@
    - execute-named-chain for running registered chains
    - make-variant-record for creating provenance-tracked variant records"
   (:require [promptbench.transform.registry :as registry]
-            [clojure.string :as str])
-  (:import [java.security MessageDigest]))
-
-;; ============================================================
-;; Hashing utility
-;; ============================================================
-
-(defn- sha256
-  "Compute SHA-256 hex digest of a string."
-  [^String s]
-  (let [md (MessageDigest/getInstance "SHA-256")
-        digest (.digest md (.getBytes s "UTF-8"))]
-    (str "sha256:" (apply str (map #(format "%02x" (bit-and % 0xff)) digest)))))
+            [promptbench.util.crypto :as crypto]
+            [clojure.string :as str]))
 
 ;; ============================================================
 ;; def-transform macro (definition registration)
@@ -170,14 +159,13 @@
    :variant-id, :source-id, :text, :variant-type, :transform-chain,
    :transform-seed, :metadata, :split."
   [source variant-type transform-chain seed text metadata]
-  {:variant-id      (sha256 (str (:source-id source) "|" (name variant-type) "|" seed "|" text))
+  {:variant-id      (crypto/sha256-id (str (:source-id source) "|" (name variant-type) "|" seed "|" text))
    :source-id       (:source-id source)
    :text            text
    :variant-type    variant-type
    :transform-chain (mapv (fn [step]
-                            (let [t (:transform step)
-                                  c (:config step)]
-                              (keyword (str (name t) "/" (str/join "-" (map (fn [[k v]] (str (name k) "=" v)) (sort c)))))))
+                            {:transform (:transform step)
+                             :config    (or (:config step) {})})
                           transform-chain)
    :transform-seed  seed
    :metadata        metadata

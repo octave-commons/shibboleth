@@ -25,33 +25,17 @@
             [promptbench.pipeline.manifest :as manifest]
             [promptbench.pipeline.splitter :as splitter]
             [promptbench.python.embed :as embed]
-            [promptbench.python.cluster :as cluster])
-  (:import [java.security MessageDigest]
-           [java.nio.file Files Paths StandardCopyOption]
+            [promptbench.python.cluster :as cluster]
+            [promptbench.util.crypto :as crypto])
+  (:import [java.nio.file Files Paths StandardCopyOption]
            [java.text Normalizer Normalizer$Form]))
 
 ;; ============================================================
-;; Hashing Utilities
+;; Hashing Utilities (delegated to promptbench.util.crypto)
 ;; ============================================================
 
-(defn- sha256-bytes
-  "Compute SHA-256 digest of a byte array, return hex string."
-  ^String [^bytes data]
-  (let [md (MessageDigest/getInstance "SHA-256")]
-    (.update md data)
-    (let [digest (.digest md)]
-      (apply str (map #(format "%02x" (bit-and % 0xff)) digest)))))
-
-(defn- sha256-file
-  "Compute SHA-256 hex string of a file."
-  ^String [^String path]
-  (let [bytes (Files/readAllBytes (Paths/get path (into-array String [])))]
-    (sha256-bytes bytes)))
-
-(defn- sha256-string
-  "Compute SHA-256 hex string of a UTF-8 string."
-  ^String [^String s]
-  (sha256-bytes (.getBytes s "UTF-8")))
+(def ^:private sha256-file crypto/sha256-file)
+(def ^:private sha256-string crypto/sha256-string)
 
 ;; ============================================================
 ;; Text Normalization

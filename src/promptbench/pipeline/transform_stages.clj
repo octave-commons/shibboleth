@@ -15,9 +15,8 @@
   (:require [promptbench.transform.core :as transform]
             [promptbench.taxonomy.registry :as taxonomy]
             [promptbench.pipeline.manifest :as manifest]
-            [clojure.java.io :as io])
-  (:import [java.security MessageDigest]
-           [java.nio.file Files Paths]))
+            [promptbench.util.crypto :as crypto]
+            [clojure.java.io :as io]))
 
 ;; ============================================================
 ;; Language tier definitions (spec §4.2)
@@ -32,28 +31,6 @@
   [:tl :sw :ur :bn :th :vi :id :tr :fa :he])
 
 ;; ============================================================
-;; Hashing utilities
-;; ============================================================
-
-(defn- sha256-bytes
-  "Compute SHA-256 hex digest of a byte array."
-  ^String [^bytes data]
-  (let [md (MessageDigest/getInstance "SHA-256")]
-    (.update md data)
-    (let [digest (.digest md)]
-      (apply str (map #(format "%02x" (bit-and % 0xff)) digest)))))
-
-(defn- sha256-string
-  "Compute SHA-256 hex string of a UTF-8 string."
-  ^String [^String s]
-  (sha256-bytes (.getBytes s "UTF-8")))
-
-(defn- sha256-file
-  "Compute SHA-256 hex string of a file."
-  ^String [^String path]
-  (sha256-bytes (Files/readAllBytes (Paths/get path (into-array String [])))))
-
-;; ============================================================
 ;; Affinity helpers
 ;; ============================================================
 
@@ -65,17 +42,23 @@
     (= :high (get-in family-data [:transforms :mt :affinity]))))
 
 (defn- resolve-eval-transforms
-  "Resolve which eval transforms (code-mix, homoglyph, exhaustion) to apply
-   for a family based on its affinity settings.
+  "Resolve which eval transforms to apply for a family based on its
+   affinity settings and the pipeline config's :transforms map.
+
+   Derives the available eval transform set from the pipeline config
+   (excluding :tier-1-mt and :tier-2-mt which are MT stage configs)
+   instead of hardcoding {:code-mix {} :homoglyph {} :exhaustion {}}.
 
    Uses taxonomy/resolve-transforms for affinity-driven selection.
    Returns a sorted vector of transform keywords to apply."
-  [family-name seed]
+  [family-name transforms-config seed]
   (when-let [family-data (taxonomy/get-family family-name)]
-    (taxonomy/resolve-transforms
-      family-data
-      {:code-mix {} :homoglyph {} :exhaustion {}}
-      {:seed seed})))
+    (let [;; Derive eval transform set from config, excluding MT stage configs
+          eval-transforms (dissoc transforms-config :tier-1-mt :tier-2-mt)]
+      (taxonomy/resolve-transforms
+        family-data
+        eval-transforms
+        {:seed seed}))))
 
 ;; ============================================================
 ;; MT variant generation (shared by stage 4 and 5)
@@ -197,15 +180,15 @@
         variants-file (str variants-dir "/tier1-mt-variants.edn")
         _             (spit variants-file (pr-str variants))
         ;; Compute checksums
-        variant-checksum (sha256-file variants-file)
+        variant-checksum (crypto/sha256-file variants-file)
         checksums        {"variants/tier1-mt-variants.edn" variant-checksum}
         ;; Chain input hash from split manifest
         split-manifest-path (str manifests-dir "/split-manifest.edn")
         input-hash (if (.exists (io/file split-manifest-path))
                      (:output-hash (manifest/read-manifest split-manifest-path))
-                     (sha256-string "no-split-manifest"))
-        output-hash (sha256-string (pr-str (into (sorted-map) checksums)))
-        config-hash (sha256-string
+                     (crypto/sha256-string "no-split-manifest"))
+        output-hash (crypto/sha256-string (pr-str (into (sorted-map) checksums)))
+        config-hash (crypto/sha256-string
                       (pr-str {:tier-1-mt tier1-config
                                :seed seed
                                :version version}))
@@ -261,15 +244,15 @@
         variants-file (str variants-dir "/tier2-mt-variants.edn")
         _             (spit variants-file (pr-str variants))
         ;; Compute checksums
-        variant-checksum (sha256-file variants-file)
+        variant-checksum (crypto/sha256-file variants-file)
         checksums        {"variants/tier2-mt-variants.edn" variant-checksum}
         ;; Chain input hash from tier1-mt manifest
         tier1-manifest-path (str manifests-dir "/tier1-mt-manifest.edn")
         input-hash (if (.exists (io/file tier1-manifest-path))
                      (:output-hash (manifest/read-manifest tier1-manifest-path))
-                     (sha256-string "no-tier1-mt-manifest"))
-        output-hash (sha256-string (pr-str (into (sorted-map) checksums)))
-        config-hash (sha256-string
+                     (crypto/sha256-string "no-tier1-mt-manifest"))
+        output-hash (crypto/sha256-string (pr-str (into (sorted-map) checksums)))
+        config-hash (crypto/sha256-string
                       (pr-str {:tier-2-mt tier2-config
                                :tier2     (boolean tier2)
                                :seed      seed
@@ -331,7 +314,7 @@
               (mapcat
                 (fn [record]
                   (let [applicable (resolve-eval-transforms
-                                     (:attack-family record) seed)]
+                                     (:attack-family record) transforms seed)]
                     (when (seq applicable)
                       (mapv
                         (fn [transform-kw]
@@ -346,15 +329,15 @@
         variants-file (str variants-dir "/eval-suite-variants.edn")
         _             (spit variants-file (pr-str variants))
         ;; Compute checksums
-        variant-checksum (sha256-file variants-file)
+        variant-checksum (crypto/sha256-file variants-file)
         checksums        {"variants/eval-suite-variants.edn" variant-checksum}
         ;; Chain input hash from tier2-mt manifest
         tier2-manifest-path (str manifests-dir "/tier2-mt-manifest.edn")
         input-hash (if (.exists (io/file tier2-manifest-path))
                      (:output-hash (manifest/read-manifest tier2-manifest-path))
-                     (sha256-string "no-tier2-mt-manifest"))
-        output-hash (sha256-string (pr-str (into (sorted-map) checksums)))
-        config-hash (sha256-string
+                     (crypto/sha256-string "no-tier2-mt-manifest"))
+        output-hash (crypto/sha256-string (pr-str (into (sorted-map) checksums)))
+        config-hash (crypto/sha256-string
                       (pr-str {:transforms transforms
                                :suites     suites
                                :seed       seed

@@ -11,10 +11,9 @@
    provenance and reproducibility system (spec §5.3)."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
-            [clojure.string :as str])
-  (:import [java.time Instant]
-           [java.security MessageDigest]
-           [java.nio.file Files Paths]))
+            [clojure.string :as str]
+            [promptbench.util.crypto :as crypto])
+  (:import [java.time Instant]))
 
 ;; ============================================================
 ;; Creation
@@ -65,19 +64,6 @@
    Returns the manifest map."
   [path]
   (edn/read-string (slurp path)))
-
-;; ============================================================
-;; Hashing Utilities
-;; ============================================================
-
-(defn- sha256-file
-  "Compute SHA-256 hex string of a file."
-  ^String [^String path]
-  (let [md (MessageDigest/getInstance "SHA-256")
-        bytes (Files/readAllBytes (Paths/get path (into-array String [])))]
-    (.update md bytes)
-    (let [digest (.digest md)]
-      (apply str (map #(format "%02x" (bit-and % 0xff)) digest)))))
 
 ;; ============================================================
 ;; Build Manifest (Top-Level Aggregation, spec §5.4)
@@ -146,7 +132,7 @@
                                  {:file filename
                                   :expected expected-hash
                                   :actual :missing}
-                                 (let [actual-hash (sha256-file file-path)]
+                                 (let [actual-hash (crypto/sha256-file file-path)]
                                    (when (not= expected-hash actual-hash)
                                      {:file filename
                                       :expected expected-hash
