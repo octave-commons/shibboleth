@@ -14,6 +14,10 @@
 
    Tags are coerced to a set, signatures to a vector. Throws on invalid spec or duplicate.
 
+   The family-name argument accepts either a bare symbol or a keyword:
+     (def-attack-family persona-injection {...})   ;; bare symbol — converted to :persona-injection
+     (def-attack-family :persona-injection {...})   ;; keyword — used as-is
+
    Usage:
      (def-attack-family persona-injection
        {:description \"Injects a fictional persona...\"
@@ -23,5 +27,7 @@
         :signatures  [{:pattern :nested-system-prompt :description \"...\"}]
         :transforms  {:mt {:affinity :high :note \"...\"}}})"
   [family-name family-data]
-  (let [kw-name (keyword (name family-name))]
+  (let [kw-name (if (keyword? family-name)
+                  family-name
+                  (keyword (name family-name)))]
     `(registry/register-family! ~kw-name ~family-data)))

@@ -12,7 +12,10 @@
    Required keys: :description (string).
    Optional keys: :parent (keyword), :children (keyword collection).
 
-   The first argument is the category name as a keyword.
+   The category name accepts either a keyword or a bare symbol:
+     (def-harm-category :jailbreak {...})   ;; keyword — used as-is
+     (def-harm-category jailbreak {...})    ;; bare symbol — converted to :jailbreak
+
    Root categories (no :parent) are allowed.
    Throws on invalid spec or duplicate.
 
@@ -22,4 +25,7 @@
         :parent      :adversarial
         :children    [:identity-manipulation :instruction-injection]})"
   [cat-name cat-data]
-  `(registry/register-category! ~cat-name ~cat-data))
+  (let [kw-name (if (keyword? cat-name)
+                  cat-name
+                  (keyword (name cat-name)))]
+    `(registry/register-category! ~kw-name ~cat-data)))

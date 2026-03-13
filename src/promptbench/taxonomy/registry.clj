@@ -111,16 +111,17 @@
                     {:name label-name
                      :data label-data
                      :explain (s/explain-data ::intent-label label-data)})))
-  ;; Conditional :requires enforcement based on polarity
+  ;; Conditional :requires enforcement based on polarity.
+  ;; Uses set equality AND count check to reject duplicate keys
+  ;; (e.g. [:attack-family :attack-family :harm-category] has the right set but wrong count).
   (let [polarity (:polarity label-data)
         requires (:requires label-data)]
     (case polarity
       :unsafe
-      (when (or (nil? requires) (empty? requires)
-                (not (every? #{:attack-family :harm-category} requires))
-                (< (count requires) 2))
+      (when-not (and (= (count requires) 2)
+                     (= (set requires) #{:attack-family :harm-category}))
         (throw (ex-info (str "Intent label " label-name " with :unsafe polarity "
-                             "requires [:attack-family :harm-category]")
+                             "requires exactly [:attack-family :harm-category] (no duplicates)")
                         {:name label-name :polarity polarity :requires requires})))
       :contested
       (when (or (nil? requires) (empty? requires)
@@ -295,27 +296,30 @@
         include-low (:include-low opts false)
         medium-rate (:medium-sample-rate opts 0.5)]
     (into []
-          (filter (fn [t]
-                    (let [a (get-in affinities [t :affinity] :none)]
-                      (case a
-                        :high   true
-                        :medium (let [;; Per-transform deterministic seed: combine global seed
-                                      ;; with transform name hash. Use java.util.Random seeded
-                                      ;; with the combined value for the single coin flip.
-                                      ;; Two-stage seeding: first RNG produces the mixing seed,
-                                      ;; second RNG does the coin flip. This ensures good
-                                      ;; distribution across sequential input seeds.
-                                      t-hash (long (hash (name t)))
-                                      mix-rng (java.util.Random. seed)
-                                      ;; Advance by transform-dependent amount to decorrelate
-                                      _ (dotimes [_ (Math/abs (rem t-hash 7))]
-                                          (.nextLong mix-rng))
-                                      combined-seed (.nextLong mix-rng)
-                                      coin-rng (java.util.Random. (bit-xor combined-seed t-hash))]
-                                  (< (.nextDouble coin-rng) medium-rate))
-                        :low    include-low
-                        :none   false))))
-          (keys transform-config))))
+          (comp (filter (fn [t]
+                          (let [a (get-in affinities [t :affinity] :none)]
+                            (case a
+                              :high   true
+                              :medium (let [;; Per-transform deterministic seed: combine global seed
+                                            ;; with transform name hash. Use java.util.Random seeded
+                                            ;; with the combined value for the single coin flip.
+                                            ;; Two-stage seeding: first RNG produces the mixing seed,
+                                            ;; second RNG does the coin flip. This ensures good
+                                            ;; distribution across sequential input seeds.
+                                            t-hash (long (hash (name t)))
+                                            mix-rng (java.util.Random. seed)
+                                            ;; Advance by transform-dependent amount to decorrelate
+                                            _ (dotimes [_ (Math/abs (rem t-hash 7))]
+                                                (.nextLong mix-rng))
+                                            combined-seed (.nextLong mix-rng)
+                                            coin-rng (java.util.Random. (bit-xor combined-seed t-hash))]
+                                        (< (.nextDouble coin-rng) medium-rate))
+                              :low    include-low
+                              :none   false)))))
+          ;; Sort transform-config keys for deterministic iteration order.
+          ;; Hash-map key iteration order is non-deterministic, so sorting ensures
+          ;; resolve-transforms returns reproducible results across invocations.
+          (sort (keys transform-config)))))
 
 ;; ============================================================
 ;; Reset (for test isolation)
