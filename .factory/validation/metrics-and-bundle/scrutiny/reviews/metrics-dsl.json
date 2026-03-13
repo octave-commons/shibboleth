@@ -1,0 +1,56 @@
+{
+  "featureId": "metrics-dsl",
+  "reviewedAt": "2026-03-13T21:15:00.000Z",
+  "commitId": "d41d7eb",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Solid implementation of the metrics DSL. The def-metric macro with atom-backed registry follows the established pattern from taxonomy and transform registries. All 6 metrics are implemented correctly: 3 coverage metrics (taxonomy-coverage, transform-coverage-matrix, language-coverage) and 3 quality metrics (cluster-leakage-rate, semantic-diversity, transform-fidelity). Pure-Clojure BLEU and chrF implementations are functional and tested. 39 tests with 87 assertions provide comprehensive coverage including edge cases. All validation contract items (VAL-METRIC-001, VAL-METRIC-002, VAL-METRIC-003) are fulfilled.",
+    "issues": [
+      {
+        "file": "src/promptbench/metrics/core.clj",
+        "line": 112,
+        "severity": "non_blocking",
+        "description": "compute-metric uses with-meta to attach :assertion-passed to the result. with-meta only works on IObj types (maps, vectors, etc.). Currently all 6 metrics return maps, so this is safe, but a future metric returning a primitive (number, string, nil) would throw ClassCastException. Consider wrapping in a result map or documenting this contract."
+      },
+      {
+        "file": "src/promptbench/metrics/quality.clj",
+        "line": 268,
+        "severity": "non_blocking",
+        "description": "transform-fidelity's registry compute function has an asymmetric interface: it checks (map? dataset) to accept either a map with :prompts/:variants keys or a flat sequence. All other metrics accept a flat sequence. This polymorphic dispatch is undocumented and could confuse future callers who pass a flat sequence expecting fidelity scores but get empty results instead."
+      },
+      {
+        "file": "src/promptbench/metrics/quality.clj",
+        "line": 155,
+        "severity": "non_blocking",
+        "description": "bleu-score averages log-precisions over only non-zero precisions (filtering out zero-precision n-gram orders) rather than using max-n as the denominator. This is a valid smoothing approach but differs from standard BLEU. Acceptable for backtranslation quality measurement but worth noting if scores are compared against external tools."
+      },
+      {
+        "file": "src/promptbench/metrics/coverage.clj",
+        "line": 38,
+        "severity": "non_blocking",
+        "description": "taxonomy-coverage returns Clojure ratio types (e.g. 3/4) rather than doubles. While technically correct and more precise, downstream consumers (reports, JSON serialization) may need explicit conversion to double. Not a bug but worth awareness."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The metrics registry now establishes a pattern where compute functions take (dataset, params) but transform-fidelity expects a map with :prompts and :variants keys rather than a flat sequence. This asymmetry in the compute-metric interface is not documented in AGENTS.md conventions or the architecture library doc. Future workers implementing metrics or calling compute-metric may be confused.",
+      "evidence": "src/promptbench/metrics/quality.clj:268 — `(if (map? dataset) (transform-fidelity (:prompts dataset) (:variants dataset)) (transform-fidelity dataset []))` vs other metrics which take a flat seq directly"
+    },
+    {
+      "area": "conventions",
+      "observation": "The architecture.md library doc lists registries (families, categories, labels, sources, transforms, metrics) but the metrics registry details (atom pattern, reset!, the def-metric macro contract) are not documented there. The architecture doc was not updated with the new metrics registry.",
+      "evidence": "architecture.md mentions 'One registry per construct type (families, categories, labels, sources, transforms, metrics)' but has no section explaining the metrics-specific patterns like assertion evaluation, with-meta contract, or the compute-metric dispatch."
+    },
+    {
+      "area": "skills",
+      "observation": "Worker's skillFeedback notes that tests and implementation were written at module level rather than individual function RED→GREEN cycles. The skill says 'Write tests first (RED)' and 'Run clj -M:test to confirm tests fail (RED)'. The worker wrote all tests for a module, then implemented the whole module. This is a reasonable deviation for a macro+registry feature where individual functions are tightly coupled, but the skill could be clearer about when module-level RED→GREEN is acceptable.",
+      "evidence": "Transcript shows Create of full test file (29117 chars) followed by Create of full source files. skillFeedback.suggestedChanges confirms: 'The RED→GREEN cycle happened at the module level rather than individual function level.'"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "PASS. The metrics-dsl feature is well-implemented with comprehensive test coverage. All 6 required metrics work correctly, the def-metric macro follows established registry patterns, and all 3 validation contract items (VAL-METRIC-001/002/003) are fulfilled. 39 tests pass with 87 assertions covering normal cases and edge cases. Four non-blocking issues identified: potential with-meta fragility on non-IObj types, asymmetric transform-fidelity interface, non-standard BLEU smoothing, and ratio-type returns from coverage. None are blocking — the implementation is correct for all current use cases."
+}

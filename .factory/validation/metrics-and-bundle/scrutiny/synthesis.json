@@ -1,0 +1,85 @@
+{
+  "milestone": "metrics-and-bundle",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "source .env && export PROXY_AUTH_TOKEN && clj -M:test",
+      "exitCode": 0,
+      "note": "361 tests, 2251 assertions, 0 failures, 0 errors. Test command in services.yaml does not source .env, causing 4 MT test errors without PROXY_AUTH_TOKEN. With env var set, all tests pass."
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "N/A",
+      "exitCode": 0,
+      "note": "Clojure is dynamically typed. No typecheck validator configured. Spec validation used instead."
+    },
+    "lint": {
+      "passed": true,
+      "command": "echo 'No linter configured yet'",
+      "exitCode": 0,
+      "note": "No linter configured per services.yaml"
+    }
+  },
+  "reviewsSummary": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Added 'Metrics Registry' section to architecture.md documenting the def-metric compute function interface asymmetry (transform-fidelity polymorphic dispatch), with-meta IObj requirement, and ratio-type returns from coverage metrics",
+      "sourceFeature": "metrics-dsl"
+    },
+    {
+      "target": "library",
+      "description": "Added 'Bundle and Reporting Quirks' section to architecture.md documenting the empty-variant parquet dummy-row workaround and CLI verify/coverage triggering pipeline builds",
+      "sourceFeature": "reports-and-bundle, cli-interface"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add convention: 'Metric compute functions should accept a flat sequence of records as their first argument. When a metric needs both prompts and variants, the caller should pass a map with :prompts and :variants keys. Document this polymorphism explicitly in the metric definition.'",
+      "evidence": "metrics-dsl: transform-fidelity in quality.clj checks (map? dataset) to support both flat sequences and maps, while all other metrics only accept flat sequences. This asymmetry is not documented and could confuse future metric implementers.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add convention: 'Prefer single-form argument validation in CLI/public functions. Use (when-not condition (do side-effects) (return-error)) or early-return with cond, rather than dual when-not/if-not guard patterns that discard intermediate return values.'",
+      "evidence": "cli-interface: All four CLI commands in cli.clj use a redundant dual when-not/if-not guard pattern where the when-not return value {:exit-code 2} is silently discarded. Same pattern in 4 places.",
+      "isSystemic": true
+    },
+    {
+      "target": "skills",
+      "suggestion": "Clarify in clojure-dsl-worker skill that RED→GREEN TDD cycle can operate at module level (write all tests for a module, then implement the module) when functions are tightly coupled, rather than strictly per-function. Current wording suggests per-function granularity.",
+      "evidence": "metrics-dsl worker wrote all 39 tests for the metrics module first, then implemented all source files. Reported this as a deviation. reports-and-bundle worker followed the same pattern successfully. Both features passed review.",
+      "isSystemic": true
+    },
+    {
+      "target": "services.yaml",
+      "suggestion": "Update the test command to source .env before running tests, so PROXY_AUTH_TOKEN is available for MT tests. Current command only sets LD_LIBRARY_PATH for NVIDIA/CUDA but not the proxy auth token. Without it, 4 MT tests error with 'PROXY_AUTH_TOKEN environment variable not set'.",
+      "evidence": "Test run without .env sourced: 361 tests, 0 failures, 4 errors (all in transform_mt_test). Test run with .env sourced: 361 tests, 0 failures, 0 errors.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "Architecture.md was not updated with metrics registry details",
+      "reason": "Applied directly in this synthesis as a library update rather than rejected. The architecture.md now contains a Metrics Registry section."
+    },
+    {
+      "observation": "Worker followed procedure correctly (reports-and-bundle skill feedback)",
+      "reason": "Informational only — not an observation requiring action."
+    },
+    {
+      "observation": "CLI skill RED→GREEN for infrastructure features (duplicate of metrics-dsl skill observation)",
+      "reason": "duplicate — already captured in the suggestedGuidanceUpdates for skills"
+    }
+  ],
+  "previousRound": null
+}

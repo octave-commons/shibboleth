@@ -1,0 +1,68 @@
+{
+  "featureId": "cli-interface",
+  "reviewedAt": "2026-03-13T21:30:00.000Z",
+  "commitId": "6610e7e",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "CLI implementation is solid. Four commands (build, verify, coverage, rebuild) are implemented with babashka/cli dispatch, proper exit codes, and comprehensive test coverage (24 tests). pipelines/v1.edn matches spec §4.2 with all required fields. The code uses clojure.edn/read-string (safe), proper error handling with try/catch for ExceptionInfo and Exception, and shutdown-agents before System/exit. The main issues are cosmetic: redundant when-not/if-not guard patterns in each command and verify/coverage calling pipeline/build! rather than reading existing artifacts.",
+    "issues": [
+      {
+        "file": "src/promptbench/cli.clj",
+        "line": 62,
+        "severity": "non_blocking",
+        "description": "Redundant dual-guard pattern: build-command has both (when-not config ...) and (if-not config ...). The when-not return value {:exit-code 2} is silently discarded since it's not the last form in the let body. Only the if-not branch controls the return. The when-not serves only as a side-effect for printing to stderr. Same pattern repeats in verify-command (line 118), coverage-command (line 167), and rebuild-command (line 238). Should be consolidated into a single cond or if-not with the println inside."
+      },
+      {
+        "file": "src/promptbench/cli.clj",
+        "line": 118,
+        "severity": "non_blocking",
+        "description": "verify-command calls pipeline/build! to get data, which will re-execute all pipeline stages if nothing has been built yet. The VAL-METRIC-008 spec says 'validates existing build' — semantically, verify should read existing artifacts rather than trigger a full build. In practice this works because build! skips completed stages, but if called on a fresh state it would run the entire pipeline rather than reporting 'no build found'."
+      },
+      {
+        "file": "src/promptbench/cli.clj",
+        "line": 167,
+        "severity": "non_blocking",
+        "description": "Same concern as verify-command: coverage-command calls pipeline/build! to get data. If no prior build exists, this triggers a full pipeline execution rather than reporting that no build data is available."
+      },
+      {
+        "file": "src/promptbench/cli.clj",
+        "line": 238,
+        "severity": "non_blocking",
+        "description": "rebuild-command has three guard forms: (when-not config ...), (when-not from ...), and (if-not (and config from) ...). Only the last controls the return value. The first two when-not forms' return values are discarded. The stderr printing in the when-not forms does work correctly for side effects, but only the first failing when-not prints since the let body evaluates sequentially and short-circuits at the if-not."
+      },
+      {
+        "file": "src/promptbench/cli.clj",
+        "line": 270,
+        "severity": "non_blocking",
+        "description": "No validation that the --from stage name is a valid pipeline stage before passing to pipeline/rebuild!. Invalid stage names will throw an ExceptionInfo from stage-index, which is caught by the try-catch and returns exit 1. Works correctly but a friendlier error message upfront listing valid stages would improve UX."
+      },
+      {
+        "file": "test/promptbench/cli_test.clj",
+        "line": 1,
+        "severity": "non_blocking",
+        "description": "Tests use relative path 'pipelines/v1.edn' in v1-config-file-exists-test (line 167). This works when tests are run from the project root (which is standard with cognitect test-runner), but is fragile if the working directory changes. Not a practical concern given the project setup but worth noting."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The CLI commands use a dual when-not/if-not guard pattern that silently discards the when-not return value. This is an unusual Clojure pattern that could confuse future workers. AGENTS.md doesn't mention preferred guard/validation patterns for function arguments.",
+      "evidence": "src/promptbench/cli.clj lines 62-67 (build-command), 118-123 (verify-command), 167-172 (coverage-command), 238-247 (rebuild-command) all follow the same pattern of (when-not x (print-error) {:exit-code 2}) followed by (if-not x {:exit-code 2} (try ...))."
+    },
+    {
+      "area": "skills",
+      "observation": "Worker reported followedProcedure: true, but the transcript shows the CLI source file (cli.clj) was created before the test file (cli_test.clj). The skill says 'Write tests first (RED)' but also has an exception for 'pure skeleton/infrastructure features'. CLI implementation arguably fits the exception, so this is a reasonable deviation rather than a violation.",
+      "evidence": "Transcript skeleton shows Tool: Create for cli.clj before Tool: Create for cli_test.clj. Skill SKILL.md Step 2 says 'Write tests first (RED)' with exception for infrastructure features."
+    },
+    {
+      "area": "conventions",
+      "observation": "The verify and coverage commands re-run the pipeline via pipeline/build! rather than reading existing build artifacts from disk. This architectural decision means 'verify' and 'coverage' are not purely read-only operations. This pattern isn't documented in architecture.md and could surprise future workers implementing similar validation commands.",
+      "evidence": "src/promptbench/cli.clj verify-command (line 130) and coverage-command (line 182) both call (pipeline/build! pipeline-name). pipeline/core.clj build! skips completed stages but will execute uncompleted ones."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "CLI interface implementation passes review. All four commands (build, verify, coverage, rebuild) are implemented with correct babashka/cli dispatch, proper exit codes (0/1/2), and comprehensive error handling. pipelines/v1.edn has all spec §4.2 fields including sources, stages, transforms, verification checks, and output config. 24 tests cover all commands for success, failure, and missing-argument cases, plus config validation and seed override. The main code smells are the redundant dual-guard pattern in each command handler and the verify/coverage commands calling build! rather than reading existing artifacts. All issues are non-blocking."
+}

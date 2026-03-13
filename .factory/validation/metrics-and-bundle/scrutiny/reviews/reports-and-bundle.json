@@ -1,0 +1,51 @@
+{
+  "featureId": "reports-and-bundle",
+  "reviewedAt": "2026-03-13T21:15:00.000Z",
+  "commitId": "54e6554e82293813cbec926b9b0f8c9a4e791149",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Solid implementation covering all 4 validation contract items (VAL-METRIC-004 through VAL-METRIC-007). Distribution reports correctly compute label distribution per-split and language×attack_family matrix with complete dimensions and zero-filling. Datasheet generator produces all 7 Gebru et al. 2021 sections populated with actual build values from taxonomy/source registries — no placeholder text. Bundle generator creates all required files (prompts.parquet, variants.parquet, manifests/, checksums.sha256, verification_report.edn, datasheet.md, build_manifest.edn) with checksums computed after file generation. Stage 7 combines structural verification with metric assertion evaluation; fatal failures block build via exception. 18 tests with 93 assertions provide comprehensive coverage. Code follows existing project patterns (atom-backed registries, crypto utilities, manifest system, deterministic ordering).",
+    "issues": [
+      {
+        "file": "src/promptbench/report/core.clj",
+        "line": 28,
+        "severity": "non_blocking",
+        "description": "label-distribution returns an unsorted map (plain hash-map from reduce). AGENTS.md determinism convention says 'All functions returning collections that feed into pipeline stages MUST return deterministically-ordered results.' This function produces reports rather than pipeline stage data, and the Markdown formatters apply sort-by-key, so the output is deterministic where it matters. Still, using sorted-map would be more consistent with the codebase pattern used in language-attack-family-matrix."
+      },
+      {
+        "file": "src/promptbench/report/bundle.clj",
+        "line": 125,
+        "severity": "non_blocking",
+        "description": "When variants is empty, a dummy row with empty strings is written to variants.parquet to work around polars not supporting truly empty DataFrames. This means variants.parquet always has at least 1 row even with 0 actual variants. The bundle summary's :variant-count correctly reports 0, but consumers reading the parquet file directly could be confused. Consider documenting this workaround or checking the parquet row count against variant-count in the verification report."
+      },
+      {
+        "file": "src/promptbench/verification/core.clj",
+        "line": 220,
+        "severity": "non_blocking",
+        "description": "run-stage7! calls verify! first, which throws ExceptionInfo on fatal failures. This means evaluate-metric-assertions never executes if structural verification fails. The return type {:verification ... :metrics ... :metric-assertions ...} is never fully populated on fatal failure. This matches spec intent ('fatal failures block build'), but callers wrapping run-stage7! in try/catch won't get metric results. Acceptable design choice, just worth noting."
+      },
+      {
+        "file": "src/promptbench/verification/core.clj",
+        "line": 196,
+        "severity": "non_blocking",
+        "description": "evaluate-metric-assertions passes (:records dataset) to metric compute functions. If any metric needs variant data or the full dataset map, it won't have access. Current metrics (coverage, quality) only need records, so this works today. Future metrics requiring variant data would need this signature expanded."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The empty-variant parquet workaround (writing a dummy row when variants is empty) is an implicit architectural decision not documented anywhere. If other features need to read variants.parquet, they need to know about this sentinel row.",
+      "evidence": "src/promptbench/report/bundle.clj:125 — writes [{:variant_id \"\" :source_id \"\" ...}] when variants is empty. Not mentioned in architecture.md or AGENTS.md."
+    },
+    {
+      "area": "skills",
+      "observation": "Worker followed the skill procedure correctly: read spec, wrote tests first (RED), implemented (GREEN), ran full test suite. skillFeedback confirms followedProcedure: true with no deviations.",
+      "evidence": "Handoff shows tests written before implementation, both targeted and full suite runs documented, skill feedback clean."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature passes review. Implementation covers all 4 validation contract items with 18 well-structured tests (93 assertions). Distribution reports, datasheet generation, bundle creation, and Stage 7 verification are all correctly implemented following existing codebase patterns. Four non-blocking issues noted: unsorted label-distribution map, empty-variant parquet dummy row, metric assertions unreachable on fatal verification failure, and metric compute receiving only records (not full dataset). None of these affect correctness for the current use cases."
+}

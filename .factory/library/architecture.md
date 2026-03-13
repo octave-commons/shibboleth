@@ -59,6 +59,22 @@ All SHA-256 operations MUST use `promptbench.util.crypto`. This namespace provid
 
 Do NOT create local MessageDigest instances. Previously SHA-256 was duplicated across `transform_stages.clj`, `manifest.clj`, `transform/core.clj`, and `stages.clj` — all consolidated in commit `895d605`.
 
+## Metrics Registry
+
+The `def-metric` macro (in `promptbench.metrics.core`) registers metrics in an atom-backed registry following the same pattern as taxonomy/transform registries. Each metric has `:description`, `:compute` (fn), optional `:params` and `:assertion`.
+
+**Compute function interface**: Most metrics accept `(dataset, params)` where `dataset` is a flat sequence of records. However, `transform-fidelity` is asymmetric — it checks `(map? dataset)` and expects a map with `:prompts` and `:variants` keys when called with variant data. This is the only metric with this polymorphic dispatch pattern.
+
+**Assertion evaluation**: `compute-metric` uses `with-meta` to attach `:assertion-passed` to the compute result. This requires the result to implement `IObj` (maps, vectors, etc.). All current metrics return maps, but future metrics returning primitives would need wrapping.
+
+**Coverage metric return types**: `taxonomy-coverage` returns Clojure ratio types (e.g., `3/4`) rather than doubles. Downstream consumers (reports, JSON) may need explicit `(double ...)` conversion.
+
+## Bundle and Reporting Quirks
+
+**Empty-variant parquet workaround**: When no variants exist, `report/bundle.clj` writes a dummy row with empty strings to `variants.parquet` because polars does not support truly empty DataFrames. The bundle summary's `:variant-count` correctly reports 0, but consumers reading the parquet file directly will see 1 row. Check `:variant-count` in `build_manifest.edn` for the true count.
+
+**CLI verify/coverage trigger builds**: The `promptbench verify` and `promptbench coverage` CLI commands call `pipeline/build!` internally to obtain data, rather than reading existing build artifacts from disk. If no prior build exists, these commands will execute the full pipeline. This is intentional (build! skips completed stages) but means they are not purely read-only operations.
+
 ## Spec Reference
 
 Full DSL design: `/home/err/devel/specs/drafts/guardrail-promptbench-dsl.md`
