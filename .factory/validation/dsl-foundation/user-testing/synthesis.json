@@ -1,0 +1,83 @@
+{
+  "milestone": "dsl-foundation",
+  "round": 1,
+  "status": "pass",
+  "note": "No interactive user surface exists for this milestone. Project uses scrutiny-only validation per mission guidance. All assertions verified through automated test suite (clj -M:test) — the only user surface for this Clojure DSL library. 122 tests, 778 assertions, 0 failures.",
+  "assertionsSummary": {
+    "total": 9,
+    "passed": 9,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-DSL-001",
+    "VAL-DSL-002",
+    "VAL-DSL-003",
+    "VAL-DSL-004",
+    "VAL-DSL-005",
+    "VAL-DSL-006",
+    "VAL-DSL-007",
+    "VAL-DSL-008",
+    "VAL-DSL-009"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null,
+  "validationMethod": "automated-test-suite",
+  "testSuiteResults": {
+    "command": "clj -M:test",
+    "testCount": 122,
+    "assertionCount": 778,
+    "failures": 0,
+    "errors": 0,
+    "exitCode": 0
+  },
+  "assertionCoverage": {
+    "VAL-DSL-001": {
+      "method": "test-suite",
+      "evidence": "clj -M:test runs successfully with 122 tests discovered across 6 test namespaces. Dependencies resolve via clj -Stree (implicit in successful test run).",
+      "testFiles": ["test/promptbench/core_test.clj", "test/promptbench/taxonomy_test.clj", "test/promptbench/taxonomy_registry_test.clj", "test/promptbench/source_test.clj", "test/promptbench/transform_test.clj", "test/promptbench/integration_test.clj"]
+    },
+    "VAL-DSL-002": {
+      "method": "test-suite",
+      "evidence": "taxonomy_test.clj covers def-attack-family registration, field round-trip (description, category, severity, parent, tags as set, signatures, transforms, gen-hints), and spec validation errors on missing required fields.",
+      "testFiles": ["test/promptbench/taxonomy_test.clj"]
+    },
+    "VAL-DSL-003": {
+      "method": "test-suite",
+      "evidence": "taxonomy_test.clj covers def-harm-category hierarchy (parent/children), root categories, parent validation, and duplicate rejection.",
+      "testFiles": ["test/promptbench/taxonomy_test.clj"]
+    },
+    "VAL-DSL-004": {
+      "method": "test-suite",
+      "evidence": "taxonomy_test.clj covers def-intent-label polarity types (safe/unsafe/contested), conditional requires enforcement, and missing field rejection.",
+      "testFiles": ["test/promptbench/taxonomy_test.clj"]
+    },
+    "VAL-DSL-005": {
+      "method": "test-suite",
+      "evidence": "taxonomy_registry_test.clj covers descendants traversal, families-with-tag, coverage-matrix, missing-coverage, all-families/all-categories/all-intent-labels, and registry isolation via reset!.",
+      "testFiles": ["test/promptbench/taxonomy_registry_test.clj"]
+    },
+    "VAL-DSL-006": {
+      "method": "test-suite",
+      "evidence": "taxonomy_registry_test.clj covers resolve-transforms with high/medium/low/none affinities, seed-deterministic medium sampling, include-low flag, and none exclusion.",
+      "testFiles": ["test/promptbench/taxonomy_registry_test.clj"]
+    },
+    "VAL-DSL-007": {
+      "method": "test-suite",
+      "evidence": "source_test.clj covers def-source registration, field validation (description, version, license, format), url-vs-path requirement, taxonomy-mapping keyword enforcement, and duplicate rejection.",
+      "testFiles": ["test/promptbench/source_test.clj"]
+    },
+    "VAL-DSL-008": {
+      "method": "test-suite",
+      "evidence": "transform_test.clj covers def-transform registration, field validation (description, type, deterministic, reversible, params-spec, provenance), optional impl, duplicate rejection, and registry/all-transforms query.",
+      "testFiles": ["test/promptbench/transform_test.clj"]
+    },
+    "VAL-DSL-009": {
+      "method": "test-suite",
+      "evidence": "integration_test.clj covers cross-macro validation: attack families referencing harm categories, category-children alignment, source taxonomy-mapping validation, transform name validation in family affinities, full §2 taxonomy loading, and registry reset.",
+      "testFiles": ["test/promptbench/integration_test.clj"]
+    }
+  }
+}
