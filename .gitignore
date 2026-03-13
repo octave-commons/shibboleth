@@ -1,0 +1,23 @@
+# Build artifacts
+data/raw/
+data/build/
+.cpcache/
+target/
+
+# Environment secrets
+.env
+
+# Editor / IDE
+.nrepl-port
+.lsp/
+.clj-kondo/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
