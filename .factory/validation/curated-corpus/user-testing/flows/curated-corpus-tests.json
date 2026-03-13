@@ -1,0 +1,46 @@
+{
+  "group": "curated-corpus-tests",
+  "surface": "cli-test-suite",
+  "tool": "clj -M:test (cognitect test-runner)",
+  "assertions": [
+    {
+      "id": "VAL-CORPUS-001",
+      "status": "pass",
+      "evidence": "curated_taxonomy_test.clj: curated source definition has all required keys, :url nil, valid :path. JSONL files parse correctly with required schema fields.",
+      "testNamespace": "promptbench.curated-taxonomy-test"
+    },
+    {
+      "id": "VAL-CORPUS-002",
+      "status": "pass",
+      "evidence": "curated_taxonomy_test.clj: persona-injection, authority-impersonation, developer-mode registered with full fields, all appear as descendants of :jailbreak, taxonomy mappings resolve correctly.",
+      "testNamespace": "promptbench.curated-taxonomy-test"
+    },
+    {
+      "id": "VAL-CORPUS-003",
+      "status": "pass",
+      "evidence": "curated_pipeline_integration_test.clj: curated prompts fetched, canonicalized, embedded, clustered, split (cluster-disjoint), source metadata and license :gpl-3.0 preserved through all stages. Python bridge initialized successfully for embedding.",
+      "testNamespace": "promptbench.curated-pipeline-integration-test"
+    },
+    {
+      "id": "VAL-CORPUS-004",
+      "status": "pass",
+      "evidence": "curated_pipeline_integration_test.clj: two builds with same seed produce byte-identical output including curated-derived records. Curated source version tracked in build manifest.",
+      "testNamespace": "promptbench.curated-pipeline-integration-test"
+    },
+    {
+      "id": "VAL-CORPUS-005",
+      "status": "pass",
+      "evidence": "curated_coverage_analysis_test.clj: curated families appear as covered in taxonomy-coverage. Coverage report shows transform gaps with affinity-based justification.",
+      "testNamespace": "promptbench.curated-coverage-analysis-test"
+    },
+    {
+      "id": "VAL-CORPUS-006",
+      "status": "pass",
+      "evidence": "curated_pipeline_integration_test.clj: DEDUP messages confirm cross-source duplicate detection and removal. Policy: curated sources preferred. Verified with injected duplicates across 8 test runs.",
+      "testNamespace": "promptbench.curated-pipeline-integration-test"
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "toolsUsed": ["clj -M:test with CUDA LD_LIBRARY_PATH"]
+}

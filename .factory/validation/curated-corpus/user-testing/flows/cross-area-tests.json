@@ -1,0 +1,58 @@
+{
+  "group": "cross-area-tests",
+  "surface": "cli-test-suite",
+  "tool": "clj -M:test (cognitect test-runner)",
+  "assertions": [
+    {
+      "id": "VAL-CROSS-001",
+      "status": "pass",
+      "evidence": "e2e_test.clj: full pipeline/build! executes stages 0-7. Build manifest shows all stages :complete. Each stage manifest exists. Output: 'Build complete. Bundle at: ...build/0.1.0 Prompts: 9 Variants: 3'",
+      "testNamespace": "promptbench.e2e-test"
+    },
+    {
+      "id": "VAL-CROSS-002",
+      "status": "pass",
+      "evidence": "e2e_test.clj: two builds with seed 1337 produce byte-identical parquet files and checksums. Only timestamps may differ.",
+      "testNamespace": "promptbench.e2e-test"
+    },
+    {
+      "id": "VAL-CROSS-003",
+      "status": "pass",
+      "evidence": "e2e_test.clj: builds with seed 1337 and seed 42 produce different output files. Schema remains identical.",
+      "testNamespace": "promptbench.e2e-test"
+    },
+    {
+      "id": "VAL-CROSS-004",
+      "status": "pass",
+      "evidence": "e2e_test.clj: every variant traces to exactly one canonical prompt via :source-id. Zero orphan variants. Transform metadata complete.",
+      "testNamespace": "promptbench.e2e-test"
+    },
+    {
+      "id": "VAL-CROSS-005",
+      "status": "pass",
+      "evidence": "e2e_test.clj: adding a new def-attack-family and rebuilding produces dataset including new family in coverage matrices. Coverage report observed showing 40% coverage with missing families listed.",
+      "testNamespace": "promptbench.e2e-test"
+    },
+    {
+      "id": "VAL-CROSS-006",
+      "status": "pass",
+      "evidence": "e2e_test.clj: CLI workflow build -> verify -> coverage succeeds end-to-end. 'Verification PASSED Checks: 1 Metric assertions: 0/0 passed'. Coverage report generates markdown with taxonomy coverage, label distribution, language x attack family matrix.",
+      "testNamespace": "promptbench.e2e-test"
+    },
+    {
+      "id": "VAL-CROSS-007",
+      "status": "pass",
+      "evidence": "e2e_test.clj: manifest chain integrity verified - each stage input-hash equals previous stage output-hash. Chain unbroken through all stages.",
+      "testNamespace": "promptbench.e2e-test"
+    },
+    {
+      "id": "VAL-CROSS-008",
+      "status": "pass",
+      "evidence": "e2e_test.clj: running pipeline/build! twice without changes produces identical output. No duplicate records created.",
+      "testNamespace": "promptbench.e2e-test"
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "toolsUsed": ["clj -M:test with CUDA LD_LIBRARY_PATH"]
+}
