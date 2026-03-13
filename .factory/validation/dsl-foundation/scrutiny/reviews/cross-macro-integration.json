@@ -1,0 +1,45 @@
+{
+  "featureId": "cross-macro-integration",
+  "reviewedAt": "2026-03-13T07:35:00.000Z",
+  "commitId": "7832bcf",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation is correct and thorough. The promptbench.validation.integrity namespace provides five referential integrity checks covering all cross-registry reference types: family→category parents, category→category parents, category→children (category|family), family→transform affinities, and source→taxonomy-mapping targets. The validate-all! function returns a well-structured result with :valid?, :errors, and :checks summary. The integration test suite (19 tests, ~587 lines) registers a comprehensive §2 taxonomy (13 categories, 13 families, 3 labels, 4 transforms, 2 sources) and exercises both positive (valid taxonomy passes) and negative (each error type caught) validation paths. Hierarchy traversal, tag queries, coverage matrix, and resolve-transforms are all tested against the full taxonomy. Registry reset isolation is verified for all three registries independently.",
+    "issues": [
+      {
+        "file": "test/promptbench/integration_test.clj",
+        "line": 288,
+        "severity": "non_blocking",
+        "description": "source-taxonomy-mapping-references-valid-entries-test only validates curated-persona-injections mapping directly. The aya-redteaming source mapping (to :illegal-activity, :hate-speech, :violence, :self-harm) is not explicitly checked in this test — only covered indirectly via validate-referential-integrity-all-pass-test. The stale comment ('These may not be registered yet') is inaccurate since those categories ARE registered in setup-full-spec-taxonomy!."
+      },
+      {
+        "file": "test/promptbench/integration_test.clj",
+        "line": 89,
+        "severity": "non_blocking",
+        "description": "Categories :illegal-activity, :hate-speech, :violence, :self-harm declare :parent :content-policy-evasion, but :content-policy-evasion's :children list only contains [:hate-speech-generation :violence-incitement]. The parent↔children relationship is not bidirectional. This is a data modeling inconsistency in the test fixture — the validation code doesn't check bidirectional consistency (which isn't required by the feature spec), but it means descendants(:content-policy-evasion) won't traverse to these categories."
+      },
+      {
+        "file": "src/promptbench/validation/integrity.clj",
+        "line": 1,
+        "severity": "non_blocking",
+        "description": "The validate-all! function uses the ! suffix (Clojure convention for side-effecting or STM-unsafe functions) but is purely a reader. While it reads from mutable atoms, it doesn't modify state. Minor naming convention point."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Worker created a new namespace directory 'validation/' alongside the existing 'verification/' directory. The distinction (validation = DSL registry referential integrity, verification = pipeline data integrity) is reasonable but undocumented. Future workers may be confused by the two similar namespaces.",
+      "evidence": "src/promptbench/validation/integrity.clj (new) vs src/promptbench/verification/core.clj and src/promptbench/verification/checks.clj (existing). Neither AGENTS.md nor architecture.md documents this distinction."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The architecture.md library file could mention the cross-registry validation layer as a new architectural concept — it's a meta-check that spans all registries and is distinct from individual registry spec validation.",
+      "evidence": ".factory/library/architecture.md lists 'Registry Pattern' with per-construct reset! but doesn't mention cross-registry referential integrity validation."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Pass. The implementation fully covers all six expected behaviors: full §2 taxonomy loading, parent reference validation, category children validation, source taxonomy-mapping validation, transform affinity reference validation, and registry reset clearing all registrations. The validation namespace provides a clean, well-documented API. Tests cover both positive and negative cases for all five check types. Three non-blocking issues noted: (1) stale comment and incomplete direct aya-redteaming mapping test (covered indirectly), (2) parent↔children bidirectionality inconsistency in test fixture data (not required by feature spec), (3) minor naming convention on validate-all! suffix."
+}

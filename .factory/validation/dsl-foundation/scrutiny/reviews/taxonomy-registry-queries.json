@@ -1,0 +1,57 @@
+{
+  "featureId": "taxonomy-registry-queries",
+  "reviewedAt": "2026-03-13T07:45:00.000Z",
+  "commitId": "7aeb5bd",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Solid implementation of all required taxonomy registry query functions and resolve-transforms. Tests are comprehensive (31 tests, 553 assertions) with proper TDD approach (RED→GREEN visible in transcript). All expected behaviors from the feature spec are covered: descendants traverses multi-level hierarchy, families-with-tag filters correctly, coverage-matrix produces correct dimensions and counts, missing-coverage identifies gaps, all-* functions return complete collections, reset! clears registries, and resolve-transforms handles all affinity levels with seed-deterministic medium sampling. The statistical test for medium sampling (1000 invocations, ±10% tolerance) is well-designed. Code quality is good with clear docstrings and idiomatic Clojure.",
+    "issues": [
+      {
+        "file": "src/promptbench/taxonomy/registry.clj",
+        "line": 189,
+        "severity": "non_blocking",
+        "description": "descendants re-deferences atoms on recursive calls. The outer call snapshots @categories-registry and @families-registry into locals, but recursive (descendants child) calls re-deref the atoms each time. This is safe in practice (single-threaded, registries don't mutate during traversal) but a local recursive helper closing over the initial snapshot would be more correct."
+      },
+      {
+        "file": "src/promptbench/taxonomy/registry.clj",
+        "line": 290,
+        "severity": "non_blocking",
+        "description": "resolve-transforms iterates (keys transform-config) whose order is non-deterministic across JVM restarts (hash map iteration order). Each transform's inclusion decision is independent, so this only affects the ORDER of the returned vector, not which transforms are included. If ordering stability matters across JVM sessions, results should be sorted. Current tests pass within a single JVM session."
+      },
+      {
+        "file": "src/promptbench/taxonomy/registry.clj",
+        "line": 282,
+        "severity": "non_blocking",
+        "description": "The :seed option defaults to 0 if not provided, but the docstring says seed is 'required'. There's no assertion or validation enforcing that the caller provides :seed in opts. Consider adding (assert (contains? opts :seed) ...) or documenting that 0 is the default."
+      },
+      {
+        "file": "src/promptbench/taxonomy/registry.clj",
+        "line": 295,
+        "severity": "non_blocking",
+        "description": "Two-stage seeding uses (rem t-hash 7) to advance the RNG, providing only 7 distinct advancement positions. With more than 7 medium-affinity transforms sharing the same modular residue, their coin-flips would be correlated. Acceptable for the current small transform set but fragile for future scaling."
+      },
+      {
+        "file": "test/promptbench/taxonomy_registry_test.clj",
+        "line": null,
+        "severity": "non_blocking",
+        "description": "No test for resolve-transforms when the family has an empty :transforms map (all transforms get :none affinity). Also no test for descendants when a category's children list includes an entry that is neither a registered category nor a registered family (silently dropped)."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The worker spent significant effort debugging the seed-mixing strategy for resolve-transforms medium sampling (4 iterations: naive XOR → splitmix64 → unchecked-math → two-stage RNG). The final two-stage seeding pattern (create mix-rng from global seed, advance by transform-hash-dependent steps, then create coin-rng from combined seed) is non-obvious and should be documented in .factory/library/architecture.md so future workers modifying resolve-transforms understand the design rationale.",
+      "evidence": "Transcript shows 4 edit+test cycles on the seed-mixing code, starting with simple (bit-xor seed (* 31 (hash (name t)))) which produced correlated values, then splitmix64 with overflow errors, then the final two-stage approach. Worker commented in code but architecture.md was not updated."
+    },
+    {
+      "area": "conventions",
+      "observation": "The feature uses (keys transform-config) which iterates in hash-map order — this produces non-deterministic vector ordering across JVM restarts. AGENTS.md states 'Determinism: All randomness must be seeded. Use java.util.Random with explicit seeds, not rand.' The convention is clear about seeded randomness but doesn't address ordering determinism of returned collections. If pipeline stages depend on consistent transform ordering, this could cause subtle bugs.",
+      "evidence": "src/promptbench/taxonomy/registry.clj:290 — (into [] (filter ...) (keys transform-config)) returns transforms in hash-map iteration order. AGENTS.md Architecture Decisions bullet 4: 'Determinism: All randomness must be seeded.'"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "PASS. All 8 expected behaviors from the feature spec are fully implemented and tested. Implementation covers descendants (hierarchy traversal), families-with-tag, coverage-matrix, missing-coverage, all-families/all-categories/all-intent-labels, reset!, and resolve-transforms with seed-deterministic medium sampling. Test suite is thorough (31 tests, 553 assertions) including a 1000-invocation statistical test. All 122 tests in the full suite pass. Non-blocking issues noted: recursive atom deref in descendants, non-deterministic vector ordering in resolve-transforms output, missing seed validation, and limited advancement positions in the RNG mixing. Two shared state observations: seed-mixing pattern discovery should be captured in architecture knowledge, and ordering determinism convention could be clarified."
+}

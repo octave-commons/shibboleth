@@ -1,0 +1,45 @@
+{
+  "featureId": "source-transform-definitions",
+  "reviewedAt": "2026-03-13T07:30:00.000Z",
+  "commitId": "87ef17e",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Solid implementation that follows established codebase patterns exactly. def-source and def-transform macros are correctly implemented with spec-based validation, atom-backed registries, duplicate rejection, query functions, and reset for test isolation. All feature requirements are met: def-source validates description/version/license/format, enforces url-or-path, validates taxonomy-mapping keyword values; def-transform validates description/type/deterministic/reversible/params-spec/provenance with :impl optional. Both reject duplicates. all-transforms and all-sources return complete collections. 48 new tests cover all expected behaviors comprehensively. The code is consistent with the taxonomy registry pattern (same atom+spec+defonce+reset! approach) and the namespace structure follows spec §9.",
+    "issues": [
+      {
+        "file": "src/promptbench/pipeline/sources.clj",
+        "line": 30,
+        "severity": "non_blocking",
+        "description": "::url and ::path specs use (s/nilable string?) while also being in opt-un. This double-optionality means {... :url nil :path nil} passes the spec but is caught by the separate validate-url-or-path! validator. The design works correctly but is slightly unusual — in practice, omitting the keys entirely would be the idiomatic pattern. Not a bug since the custom validator catches the nil+nil case."
+      },
+      {
+        "file": "src/promptbench/pipeline/sources.clj",
+        "line": 76,
+        "severity": "non_blocking",
+        "description": "Race condition in duplicate check: register-source! reads @sources-registry for contains? check then does a separate swap!. Two concurrent registrations with the same name could both pass the check. This is the same pattern used in the taxonomy registry and is acceptable for DSL load-time use, but worth noting for future multi-threaded pipeline scenarios."
+      },
+      {
+        "file": "src/promptbench/transform/registry.clj",
+        "line": 43,
+        "severity": "non_blocking",
+        "description": "Same race condition pattern as sources: register-transform! has a TOCTOU gap between the contains? check and the swap!. Identical to the taxonomy registry pattern and acceptable for current single-threaded DSL loading use case."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Worker correctly followed the (:refer-clojure :exclude [reset!]) pattern to avoid shadowing warnings, matching the taxonomy registry convention. This convention is now used in 3 registries (taxonomy, sources, transforms) but is not documented in AGENTS.md coding conventions.",
+      "evidence": "src/promptbench/pipeline/sources.clj:9 and src/promptbench/transform/registry.clj:9 both use (:refer-clojure :exclude [reset!]), matching src/promptbench/taxonomy/registry.clj:6"
+    },
+    {
+      "area": "conventions",
+      "observation": "The atom+spec registry pattern (defonce atom, spec defs, register! with spec validation + duplicate check, get-X, all-X, reset!) is now used in 3 places. It could benefit from a shared base/protocol or at minimum explicit documentation of the pattern contract in AGENTS.md.",
+      "evidence": "Identical structural pattern in taxonomy/registry.clj, pipeline/sources.clj, transform/registry.clj — each has defonce atom, s/def specs, register-X! with (when-not (s/valid? ...)) + (when (contains? @reg ...)) + (swap! reg assoc ...), get-X, all-Xs, reset!"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature passes review. Implementation is correct, complete, and follows established codebase patterns. All 6 expectedBehaviors are covered: def-source registers with all required fields and rejects missing ones; sources accept url-based or path-based with at least one required; taxonomy mapping keyword values are enforced; def-transform registers with metadata and optional impl; multiple transforms of same type coexist; all registered sources/transforms are queryable. 48 new tests (23 source + 25 transform) provide comprehensive coverage. Only non-blocking issues found: double-optionality in url/path specs (functionally correct), and TOCTOU race in duplicate checks (matches existing pattern, acceptable for DSL load-time use)."
+}

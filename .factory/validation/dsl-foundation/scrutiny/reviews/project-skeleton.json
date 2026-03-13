@@ -1,0 +1,44 @@
+{
+  "featureId": "project-skeleton",
+  "reviewedAt": "2026-03-13T07:15:00.000Z",
+  "commitId": "40a84fb",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The project-skeleton feature is implemented correctly. deps.edn includes all 7 required dependencies (libpython-clj2, spec.alpha, cheshire, babashka/cli, babashka/fs, clj-http, cognitect test-runner) with correct Maven coordinates and working versions. bb.edn defines a test task that shells out to clj -M:test. The directory structure matches spec §9 with all 7 namespace directories (taxonomy, transform, pipeline, verification, metrics, python, report) plus stub .clj files in each. .gitignore covers all required exclusions (data/raw/, data/build/, .env, .cpcache/) plus sensible extras (target/, .nrepl-port, __pycache__/, etc.). The test verifies infrastructure: basic assertion, spec.alpha availability, and core namespace loading. One minor test wording issue noted below, but nothing blocking.",
+    "issues": [
+      {
+        "file": "test/promptbench/core_test.clj",
+        "line": 7,
+        "severity": "non_blocking",
+        "description": "The test assertion message says 'clojure.spec.alpha is available after require' but there is no explicit (require 'clojure.spec.alpha) call — it relies on spec.alpha being transitively loaded by the Clojure runtime. The test passes, but the message is misleading. Consider either adding an explicit require or changing the message to 'clojure.spec.alpha is on classpath'."
+      },
+      {
+        "file": "test/promptbench/core_test.clj",
+        "line": 11,
+        "severity": "non_blocking",
+        "description": "The (require 'promptbench.core) call is inside a testing block rather than a fixture or setup. This works fine for a smoke test, but if future tests in this namespace also need promptbench.core, the require will be a no-op on second call. Not a problem now, just a style note."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "Worker discovered that babashka/fs uses Clojars group 'babashka/fs' not 'org.babashka/fs', requiring a web search to resolve. This dependency coordinate quirk could be documented in the library to prevent future workers from hitting the same issue.",
+      "evidence": "Transcript shows initial deps.edn had wrong coordinates, worker did WebSearch for 'babashka/fs clojars latest version', then edited deps.edn to fix. Handoff discoveredIssues confirms: 'babashka/fs uses Clojars group babashka/fs not org.babashka/fs'."
+    },
+    {
+      "area": "skills",
+      "observation": "Worker correctly noted that the clojure-dsl-worker skill's 'Write tests first (RED)' step doesn't apply to skeleton/infrastructure features where there's no code to fail against. The skill could add a note that skeleton features may skip the RED phase.",
+      "evidence": "Handoff skillFeedback.suggestedChanges: 'The skill says to write failing tests first (RED), but for a project-skeleton feature there is no code to fail against — the test is inherently about infrastructure working. Consider noting that skeleton features may skip RED phase.'"
+    },
+    {
+      "area": "conventions",
+      "observation": "The commit includes .factory/init.sh, .factory/library/*.md, .factory/services.yaml, and .factory/skills/clojure-dsl-worker/SKILL.md in the same commit as project source files. These are Factory infrastructure files bundled with the feature commit. This is fine for the initial commit but future features should keep .factory/ changes separate or the convention should be documented.",
+      "evidence": "git show 40a84fb --stat shows 37 files including 6 .factory/ files alongside 31 project files."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The project-skeleton feature is well-implemented and meets all requirements from the feature description and expectedBehavior. All 7 dependencies resolve correctly, bb test and clj -M:test both pass with 1 test/3 assertions, the directory structure matches spec §9 with 7 namespace directories, and .gitignore covers all required exclusions. Two non-blocking style issues in the test file (misleading assertion message, inline require). Worker followed the skill procedure appropriately, noting that the RED-GREEN-REFACTOR cycle doesn't apply to pure infrastructure features. The worker hit one dependency coordinate issue (babashka/fs vs org.babashka/fs) that could be captured in the knowledge library."
+}

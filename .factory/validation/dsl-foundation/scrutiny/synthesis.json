@@ -1,0 +1,130 @@
+{
+  "milestone": "dsl-foundation",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "clj -M:test", "exitCode": 0, "details": "122 tests, 778 assertions, 0 failures, 0 errors" },
+    "typecheck": { "passed": true, "command": "N/A", "exitCode": 0, "details": "Clojure is dynamically typed; no separate typecheck phase" },
+    "lint": { "passed": true, "command": "echo \"No linter configured yet\"", "exitCode": 0, "details": "No linter configured in services.yaml" }
+  },
+  "reviewsSummary": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "featureReviews": {
+    "project-skeleton": {
+      "status": "pass",
+      "commitId": "40a84fb",
+      "nonBlockingIssues": 2,
+      "summary": "Project skeleton correctly implemented with all 7 dependencies, directory structure matching spec §9, .gitignore, and passing test infrastructure."
+    },
+    "taxonomy-macros": {
+      "status": "pass",
+      "commitId": "7e0a468",
+      "nonBlockingIssues": 4,
+      "summary": "Three taxonomy macros with spec validation, atom-backed registries, duplicate rejection, conditional requirements. 24 tests, 54 assertions. Minor: unsafe polarity edge case, symbol/keyword API inconsistency."
+    },
+    "taxonomy-registry-queries": {
+      "status": "pass",
+      "commitId": "7aeb5bd",
+      "nonBlockingIssues": 5,
+      "summary": "All query functions implemented: descendants, families-with-tag, coverage-matrix, missing-coverage, all-* functions, reset!, resolve-transforms with seed-deterministic medium sampling. 31 tests, 553 assertions."
+    },
+    "source-transform-definitions": {
+      "status": "pass",
+      "commitId": "87ef17e",
+      "nonBlockingIssues": 3,
+      "summary": "def-source and def-transform macros following established registry pattern. Spec validation, url-or-path enforcement, optional impl. 48 tests."
+    },
+    "cross-macro-integration": {
+      "status": "pass",
+      "commitId": "7832bcf",
+      "nonBlockingIssues": 3,
+      "summary": "Five referential integrity checks across all registries. Full §2 taxonomy integration test (13 categories, 13 families, 3 labels, 4 transforms, 2 sources). 19 tests."
+    }
+  },
+  "blockingIssues": [],
+  "nonBlockingIssuesSummary": [
+    {
+      "featureId": "taxonomy-macros",
+      "description": "Unsafe polarity validation edge case: [:attack-family :attack-family] passes but doesn't enforce both required keys"
+    },
+    {
+      "featureId": "taxonomy-macros",
+      "description": "API inconsistency: def-attack-family takes bare symbol, def-harm-category/def-intent-label take keywords"
+    },
+    {
+      "featureId": "taxonomy-registry-queries",
+      "description": "resolve-transforms output order non-deterministic across JVM restarts (hash map iteration order)"
+    },
+    {
+      "featureId": "taxonomy-registry-queries",
+      "description": "RNG advancement positions limited to 7 — may cause correlation with >7 medium-affinity transforms"
+    },
+    {
+      "featureId": "taxonomy-registry-queries",
+      "description": "No test for resolve-transforms with empty :transforms map or descendants with unregistered children"
+    },
+    {
+      "featureId": "source-transform-definitions",
+      "description": "Double-optionality in url/path specs (nilable + opt-un) — functionally correct but unusual"
+    },
+    {
+      "featureId": "cross-macro-integration",
+      "description": "Parent↔children bidirectionality not enforced in test fixtures (data modeling gap, not required by spec)"
+    }
+  ],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Documented reset! shadowing pattern, TOCTOU registration note, seed-mixing strategy for resolve-transforms, validation/ vs verification/ namespace distinction, cross-registry validation layer",
+      "file": ".factory/library/architecture.md",
+      "sourceFeatures": ["taxonomy-macros", "taxonomy-registry-queries", "source-transform-definitions", "cross-macro-integration"]
+    },
+    {
+      "target": "library",
+      "description": "Documented babashka/fs Clojars coordinate quirk",
+      "file": ".factory/library/environment.md",
+      "sourceFeatures": ["project-skeleton"]
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add convention: DSL macro argument naming should be standardized — either all macros accept bare symbols (converted to keywords internally) or all accept keywords directly. Currently def-attack-family takes symbols while def-harm-category and def-intent-label take keywords.",
+      "evidence": "taxonomy-macros review found families.clj:26 uses (keyword (name family-name)) while categories.clj:19 and labels.clj:29 pass keywords directly. This inconsistency may confuse future DSL users.",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add convention: (:refer-clojure :exclude [reset!]) is required in all registry namespaces that define their own reset! function. This is now established in 3 registries.",
+      "evidence": "Three registries (taxonomy/registry, pipeline/sources, transform/registry) all independently discovered the need for this pattern. taxonomy-macros worker spent debugging time on the shadowing issue.",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Clarify determinism convention: 'All randomness must be seeded' should also address ordering determinism of returned collections. Functions returning vectors/sequences from hash-map iteration should sort results for cross-JVM-session stability.",
+      "evidence": "taxonomy-registry-queries review found resolve-transforms uses (keys transform-config) which produces non-deterministic ordering across JVM restarts.",
+      "isSystemic": false
+    },
+    {
+      "target": "skills",
+      "suggestion": "clojure-dsl-worker skill: Add note that skeleton/infrastructure features may skip the RED phase of TDD since there's no code to fail against initially.",
+      "evidence": "project-skeleton worker noted this deviation in skillFeedback.suggestedChanges.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": ".factory files bundled in feature commits should be separated",
+      "reason": "This only applies to the initial project-skeleton commit where .factory/ infrastructure was bootstrapped alongside the project. Not a recurring pattern."
+    },
+    {
+      "observation": "atom+spec registry pattern used 3x could benefit from shared base/protocol",
+      "reason": "Premature abstraction. The three registries are similar but have different validation logic and field shapes. Abstracting now would add indirection without clear benefit. Document the pattern instead (done in architecture.md)."
+    }
+  ],
+  "previousRound": null
+}

@@ -14,6 +14,10 @@ Environment variables, external dependencies, and setup notes.
 - Babashka: 1.12+
 - Python: 3.12+ (via pyenv at `~/.pyenv/versions/3.12.1`)
 
+## Dependency Coordinate Quirks
+
+- `babashka/fs` uses Clojars group `babashka/fs`, **not** `org.babashka/fs`. Check Clojars for the canonical coordinate.
+
 ## Python Packages
 
 - `sentence-transformers` (for embeddings)

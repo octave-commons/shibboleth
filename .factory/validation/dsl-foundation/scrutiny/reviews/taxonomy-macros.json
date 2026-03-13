@@ -1,0 +1,51 @@
+{
+  "featureId": "taxonomy-macros",
+  "reviewedAt": "2026-03-13T07:15:00.000Z",
+  "commitId": "7e0a468",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Solid implementation of the three taxonomy macros (def-attack-family, def-harm-category, def-intent-label) with atom-backed registries, clojure.spec validation, and comprehensive tests (24 tests, 54 assertions). The code is well-structured, idiomatic Clojure with good separation of concerns. The worker followed TDD (tests first, then implementation) and resolved a clojure.core/reset! shadowing bug during development. Two non-blocking issues found: (1) unsafe polarity validation doesn't enforce that BOTH :attack-family AND :harm-category are present — [:attack-family :attack-family] would pass, (2) macro API inconsistency where def-attack-family takes a bare symbol while def-harm-category and def-intent-label take keywords. Parent existence validation for harm categories is not implemented but is properly deferred to the cross-macro-integration feature (VAL-DSL-009). The commit also includes query/utility functions (descendants, families-with-tag, coverage-matrix, missing-coverage, resolve-transforms) that belong to VAL-DSL-005/006 — minor scope creep but not harmful since those are tested in a subsequent feature.",
+    "issues": [
+      {
+        "file": "src/promptbench/taxonomy/registry.clj",
+        "line": 117,
+        "severity": "non_blocking",
+        "description": "Unsafe polarity validation has a gap: the check `(not (every? #{:attack-family :harm-category} requires))` combined with `(< (count requires) 2)` does not ensure BOTH :attack-family AND :harm-category are present. Input like [:attack-family :attack-family] (count=2, every element in set) passes validation but doesn't actually require :harm-category. Should use a set intersection check: `(not= (set requires) #{:attack-family :harm-category})` or explicitly check `(not (and (some #{:attack-family} requires) (some #{:harm-category} requires)))`."
+      },
+      {
+        "file": "src/promptbench/taxonomy/families.clj",
+        "line": 26,
+        "severity": "non_blocking",
+        "description": "API inconsistency: def-attack-family takes a bare symbol (e.g., `(def-attack-family persona-injection {...})`) and converts it to a keyword via `(keyword (name family-name))`, while def-harm-category and def-intent-label take keywords directly (e.g., `(def-harm-category :adversarial {...})`). This inconsistency may confuse DSL users. Consider standardizing all three macros to accept either symbols or keywords consistently."
+      },
+      {
+        "file": "src/promptbench/taxonomy/registry.clj",
+        "line": 13,
+        "severity": "non_blocking",
+        "description": "Minor scope creep: This commit includes query functions (descendants, families-with-tag, coverage-matrix, missing-coverage, resolve-transforms) that are tested and validated by features taxonomy-registry-queries (VAL-DSL-005/006) and cross-macro-integration (VAL-DSL-009). Not harmful, but the commit covers more than the taxonomy-macros feature scope."
+      },
+      {
+        "file": "src/promptbench/taxonomy/registry.clj",
+        "line": 100,
+        "severity": "non_blocking",
+        "description": "TOCTOU race in registration: the duplicate check (`(when (contains? @families-registry family-name)`) and the swap are not atomic. In concurrent scenarios, two threads could both pass the check and register. Not a practical concern for this CLI/batch pipeline but worth noting for correctness. Applies to all three register-*! functions."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Macro naming API is inconsistent: def-attack-family takes a bare symbol and converts to keyword, while def-harm-category and def-intent-label take keyword literals directly. AGENTS.md documents 'DSL macros should expand to registry operations' but doesn't specify whether macro names should be symbols or keywords. This should be standardized.",
+      "evidence": "src/promptbench/taxonomy/families.clj:26 uses `(keyword (name family-name))`, categories.clj:19 and labels.clj:29 pass the first arg directly as a keyword. Tests confirm: `(families/def-attack-family persona-injection ...)` vs `(categories/def-harm-category :adversarial ...)`"
+    },
+    {
+      "area": "knowledge",
+      "observation": "Worker encountered clojure.core/reset! shadowing when defining a `reset!` function in the registry namespace. This required using `:refer-clojure :exclude [reset! descendants]` and `clojure.core/reset!` for atom resets. This is a common Clojure gotcha that cost debugging time (visible in transcript: two edit cycles to fix). Could be documented in .factory/library/ as a known pattern for registry namespaces.",
+      "evidence": "Transcript skeleton shows: Worker first created reset! which recursively called itself, then edited twice to add `:refer-clojure :exclude` and use `clojure.core/reset!`. Final fix at registry.clj:7 — `(:refer-clojure :exclude [reset! descendants])`"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature taxonomy-macros passes review. The implementation correctly delivers def-attack-family, def-harm-category, and def-intent-label macros with clojure.spec validation, atom-backed registries, duplicate rejection, and conditional requirements enforcement. 24 tests with 54 assertions provide strong coverage of all three VAL-DSL assertions (002, 003, 004). Two non-blocking code issues found: (1) an edge case in unsafe polarity validation that accepts duplicate requires entries instead of enforcing both :attack-family and :harm-category, and (2) API naming inconsistency between symbol-based and keyword-based macro arguments. Neither issue affects current test suite behavior or practical usage."
+}
