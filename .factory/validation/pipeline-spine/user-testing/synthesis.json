@@ -1,0 +1,90 @@
+{
+  "milestone": "pipeline-spine",
+  "round": 1,
+  "status": "pass",
+  "note": "No interactive user surface exists for this milestone. Project uses scrutiny-only validation per mission guidance. All assertions verified through automated test suite (clj -M:test) — the only user surface for this Clojure DSL pipeline library. 222 tests, 1535 assertions, 0 failures, 0 errors. Required LD_LIBRARY_PATH fix for CUDA libraries (nvidia-cusparselt) to resolve PyTorch import errors.",
+  "assertionsSummary": {
+    "total": 9,
+    "passed": 9,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-PIPE-001",
+    "VAL-PIPE-002",
+    "VAL-PIPE-003",
+    "VAL-PIPE-004",
+    "VAL-PIPE-005",
+    "VAL-PIPE-006",
+    "VAL-PIPE-007",
+    "VAL-PIPE-008",
+    "VAL-PIPE-009"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [
+    {
+      "target": "user-testing.md",
+      "description": "Documented CUDA library path requirement: LD_LIBRARY_PATH must include nvidia package lib dirs under pyenv for PyTorch/sentence-transformers to load. Installed nvidia-cusparselt-cu12 package.",
+      "source": "setup"
+    }
+  ],
+  "previousRound": null,
+  "validationMethod": "automated-test-suite",
+  "testSuiteResults": {
+    "command": "clj -M:test",
+    "testCount": 222,
+    "assertionCount": 1535,
+    "failures": 0,
+    "errors": 0,
+    "exitCode": 0,
+    "environmentFix": "LD_LIBRARY_PATH must include nvidia lib dirs from pyenv site-packages for CUDA libraries"
+  },
+  "assertionCoverage": {
+    "VAL-PIPE-001": {
+      "method": "test-suite",
+      "evidence": "python_bridge_test.clj: bridge-initializes confirms libpython-clj starts, embed-batch-shape verifies [n, 1024] output, embed-batch-unit-normalized checks L2 normalization, cluster-embeddings-valid-labels tests HDBSCAN labels >= -1, parquet-round-trip and parquet-file-created verify polars IO.",
+      "testFiles": ["test/promptbench/python_bridge_test.clj"]
+    },
+    "VAL-PIPE-002": {
+      "method": "test-suite",
+      "evidence": "pipeline_test.clj: fetch-produces-raw-files-test, fetch-checksums-match-files-test (SHA-256 verification), fetch-idempotent-test (re-run same output), fetch-writes-manifest-test, fetch-deterministic-paths-test verify Stage 0 Fetch.",
+      "testFiles": ["test/promptbench/pipeline_test.clj"]
+    },
+    "VAL-PIPE-003": {
+      "method": "test-suite",
+      "evidence": "pipeline_test.clj: canonicalize-nfkc-normalization-test, canonicalize-whitespace-collapse-test, canonicalize-hash-determinism-test, canonicalize-hash-is-sha256-test, canonicalize-source-id-deterministic-test, canonicalize-source-id-unique-test, canonicalize-taxonomy-mapping-test, canonicalize-output-records-have-required-fields-test, nfkc-known-characters-test, canonical-hash-determinism-100x-test verify Stage 1.",
+      "testFiles": ["test/promptbench/pipeline_test.clj"]
+    },
+    "VAL-PIPE-004": {
+      "method": "test-suite",
+      "evidence": "stages_2_3_test.clj: embed-cluster-count-preservation-test (no records dropped), embed-cluster-embeddings-l2-normalized-test, embed-cluster-every-prompt-gets-cluster-id-test, embed-cluster-cluster-ids-valid-test (>= -1), embed-cluster-synthetic-at-least-2-clusters-test, embed-cluster-writes-manifest-test verify Stage 2.",
+      "testFiles": ["test/promptbench/stages_2_3_test.clj"]
+    },
+    "VAL-PIPE-005": {
+      "method": "test-suite",
+      "evidence": "stages_2_3_test.clj: split-cluster-disjointness-test (KEY INVARIANT - no cluster in multiple splits), split-disjointness-fails-on-leaked-cluster-test (negative test), split-every-prompt-assigned-test, split-proportions-within-tolerance-test (70/15/15 ±5pp), split-noise-points-assigned-test, split-seed-determinism-test verify Stage 3.",
+      "testFiles": ["test/promptbench/stages_2_3_test.clj"]
+    },
+    "VAL-PIPE-006": {
+      "method": "test-suite",
+      "evidence": "pipeline_test.clj: manifest-has-all-required-fields-test, manifest-write-and-read-roundtrip-test. manifest_verification_test.clj: build-manifest-aggregates-all-stages-test, checksums-match-files-on-disk-test, checksums-detect-mismatch-test, config-hash-changes-when-config-changes-test verify the manifest system.",
+      "testFiles": ["test/promptbench/pipeline_test.clj", "test/promptbench/manifest_verification_test.clj"]
+    },
+    "VAL-PIPE-007": {
+      "method": "test-suite",
+      "evidence": "pipeline_orchestration_test.clj: def-pipeline-produces-valid-definition-test, pipeline-stages-execute-in-order-test, build-up-to-stops-at-stage-test, pipeline-idempotent-test, pipeline-resumable-test, rebuild-invalidates-downstream-test, seed-controls-reproducibility-test verify pipeline orchestration.",
+      "testFiles": ["test/promptbench/pipeline_orchestration_test.clj"]
+    },
+    "VAL-PIPE-008": {
+      "method": "test-suite",
+      "evidence": "manifest_verification_test.clj: cluster-disjoint-splits pass/fail tests, variant-split-consistency pass/fail tests, duplicate-detection pass/fail tests, label-distribution-sane pass/fail tests, verify-runs-all-checks-test, fatal-check-failure-prevents-build-test, non-fatal-check-produces-warning-not-exception-test verify the verification layer.",
+      "testFiles": ["test/promptbench/manifest_verification_test.clj"]
+    },
+    "VAL-PIPE-009": {
+      "method": "test-suite",
+      "evidence": "manifest_verification_test.clj: parquet-schema-has-12-columns-test, parquet-schema-column-names-test, parquet-schema-correct-types-test, parquet-schema-required-columns-test, validate-parquet-schema-passes-valid-records-test, validate-parquet-schema-detects-nulls-in-required-test, validate-parquet-schema-detects-wrong-column-count-test verify parquet schema completeness.",
+      "testFiles": ["test/promptbench/manifest_verification_test.clj"]
+    }
+  }
+}
