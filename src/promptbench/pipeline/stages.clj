@@ -133,6 +133,77 @@
           (line-seq rdr))))
 
 ;; ============================================================
+;; Cross-Source Deduplication
+;; ============================================================
+
+(defn deduplicate-cross-source
+  "Deduplicate canonical records across sources by canonical-hash.
+
+   **Dedup Policy** (documented per VAL-CORPUS-006):
+   When the same text (identical after NFKC normalization and whitespace
+   collapse) appears in multiple sources:
+   1. Curated sources take precedence over public sources
+      (source keyword contains 'curated' prefix).
+   2. Among same-type sources (both curated or both public),
+      the record from the alphabetically-first source is kept.
+   3. Deterministic: same input always produces same output.
+
+   Rationale: Curated sources carry more precise attack family
+   classifications. Keeping curated provenance preserves the
+   taxonomy granularity that curated data provides.
+
+   Arguments:
+   - records — vector of canonical records (output of canonicalize!)
+
+   Returns:
+   {:records     [<deduplicated-records>]
+    :duplicates  [{:canonical-hash ... :kept-source ... :removed [{:source ... :source-id ...}]}]
+    :stats       {:total-input int :total-output int :removed int}}"
+  [records]
+  (let [;; Group by canonical-hash
+        by-hash (group-by :canonical-hash records)
+        ;; Process each group
+        results
+        (reduce-kv
+          (fn [acc hash group]
+            (if (= 1 (count group))
+              ;; No duplicates — keep as-is
+              (update acc :records conj (first group))
+              ;; Duplicates found — apply dedup policy
+              (let [curated? (fn [r]
+                               (let [src-name (name (get-in r [:source :dataset] :unknown))]
+                                 (str/starts-with? src-name "curated")))
+                    ;; Sort: curated first, then alphabetically by source name
+                    sorted-group (sort-by (fn [r]
+                                            [(if (curated? r) 0 1)
+                                             (name (get-in r [:source :dataset] :unknown))])
+                                          group)
+                    keeper (first sorted-group)
+                    removed (rest sorted-group)]
+                (-> acc
+                    (update :records conj keeper)
+                    (update :duplicates conj
+                            {:canonical-hash hash
+                             :kept-source    (get-in keeper [:source :dataset])
+                             :removed        (mapv (fn [r]
+                                                     {:source    (get-in r [:source :dataset])
+                                                      :source-id (:source-id r)})
+                                                   removed)})))))
+          {:records [] :duplicates []}
+          (into (sorted-map) by-hash))
+        total-input (count records)
+        total-output (count (:records results))
+        removed (- total-input total-output)]
+    (when (pos? removed)
+      (binding [*out* *err*]
+        (println (str "DEDUP: Removed " removed " cross-source duplicate(s). "
+                      "Policy: curated sources preferred."))))
+    (assoc results
+           :stats {:total-input total-input
+                   :total-output total-output
+                   :removed removed})))
+
+;; ============================================================
 ;; Stage 0: Fetch
 ;; ============================================================
 
@@ -288,9 +359,17 @@
                                             :license (:license source-data)}}))
                       rows))))
               (sort sources))
+        ;; Deduplicate cross-source records (VAL-CORPUS-006)
+        dedup-result (deduplicate-cross-source all-records)
+        all-records (:records dedup-result)
+        dedup-report {:duplicates (:duplicates dedup-result)
+                      :stats (:stats dedup-result)}
         ;; Write canonical records as EDN
         canon-file (str canon-dir "/canonical-records.edn")
         _ (spit canon-file (pr-str all-records))
+        ;; Write dedup report if any duplicates found
+        _ (when (seq (:duplicates dedup-report))
+            (spit (str canon-dir "/dedup-report.edn") (pr-str dedup-report)))
         ;; Compute checksums
         canon-checksum (sha256-file canon-file)
         checksums {"canonicalized/canonical-records.edn" canon-checksum}
@@ -322,7 +401,8 @@
     (manifest/write-manifest! stage-manifest
                               (str manifests-dir "/canonicalize-manifest.edn"))
     {:manifest stage-manifest
-     :records all-records}))
+     :records all-records
+     :dedup-report dedup-report}))
 
 ;; ============================================================
 ;; Stage 2: Embed + Cluster

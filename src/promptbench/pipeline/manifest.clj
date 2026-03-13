@@ -92,9 +92,13 @@
    :total-prompts   — integer count of canonical prompts
    :total-variants  — integer count of transform variants
 
+   `opts` may include:
+   :source-versions — map of source-keyword -> version-string
+                      (tracks curated and public source versions)
+
    Returns a build manifest map per spec §5.4."
   [{:keys [dataset-name version build-seed stage-manifests
-           total-prompts total-variants]}]
+           total-prompts total-variants source-versions]}]
   (let [stages (reduce
                  (fn [acc sm]
                    (assoc acc (:stage sm)
@@ -102,13 +106,14 @@
                            :hash (:output-hash sm)}))
                  {}
                  stage-manifests)]
-    {:dataset-name    dataset-name
-     :version         version
-     :build-seed      build-seed
-     :git-commit      (get-git-commit)
-     :stages          stages
-     :total-prompts   total-prompts
-     :total-variants  total-variants}))
+    (cond-> {:dataset-name    dataset-name
+             :version         version
+             :build-seed      build-seed
+             :git-commit      (get-git-commit)
+             :stages          stages
+             :total-prompts   total-prompts
+             :total-variants  total-variants}
+      source-versions (assoc :source-versions source-versions))))
 
 ;; ============================================================
 ;; Checksum Verification

@@ -27,7 +27,8 @@
             [promptbench.metrics.core :as metrics]
             [promptbench.metrics.coverage :as coverage]
             [promptbench.metrics.quality :as quality]
-            [promptbench.pipeline.manifest :as manifest]))
+            [promptbench.pipeline.manifest :as manifest]
+            [promptbench.pipeline.sources :as sources]))
 
 ;; ============================================================
 ;; Config Loading
@@ -96,6 +97,12 @@
                                                 (manifest/read-manifest mf-path)))))
                                     [:fetch :canonicalize :embed-cluster :split
                                      :tier1-mt :tier2-mt :eval-suites])
+              ;; Gather source versions for build manifest
+              source-versions (into (sorted-map)
+                                    (keep (fn [src-kw]
+                                            (when-let [src-data (sources/get-source src-kw)]
+                                              [src-kw (:version src-data)])))
+                                    (or (:sources cfg) []))
               ;; Build info for bundle
               version (or (:version cfg) "0.1.0")
               build-seed (or seed (:seed cfg) 1337)
@@ -105,6 +112,7 @@
                           :total-variants (count variants)
                           :languages (vec (sort (distinct (keep :canonical-lang records))))
                           :sources (or (:sources cfg) [])
+                          :source-versions source-versions
                           :license "GPL-3.0"
                           :git-commit (try
                                         (str/trim (:out (shell/sh "git" "rev-parse" "--short" "HEAD")))

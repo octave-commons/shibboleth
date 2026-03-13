@@ -149,7 +149,8 @@
                             :build-seed (:seed build-info)
                             :stage-manifests (or (:stage-manifests build-info) [])
                             :total-prompts (count records)
-                            :total-variants (count variants)})]
+                            :total-variants (count variants)
+                            :source-versions (:source-versions build-info)})]
       (manifest/write-manifest! build-manifest
                                 (str bundle-dir "/build_manifest.edn")))
 

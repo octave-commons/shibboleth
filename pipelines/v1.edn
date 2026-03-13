@@ -14,7 +14,8 @@
 
  ;; Stage 0: Fetch
  :sources [:aya-redteaming :harmbench :advbench :toxicchat
-           :curated-persona-injections]
+           :curated-persona-injections :curated-authority-escalation
+           :curated-developer-mode]
 
  ;; Stage 1: Canonicalize
  :canonicalize {:normalization :nfkc
