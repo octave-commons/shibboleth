@@ -1,6 +1,6 @@
 commands:
   install: clj -P && python3 -m pip install hdbscan polars --quiet
-  test: clj -M:test
+  test: bash -c 'NVIDIA_BASE="$(python3 -c "import sys,os;print(os.path.join(sys.prefix,\"lib\",f\"python{sys.version_info.major}.{sys.version_info.minor}\",\"site-packages\",\"nvidia\"))" 2>/dev/null||true)" && if [ -d "${NVIDIA_BASE:-}" ]; then for d in "$NVIDIA_BASE"/*/lib; do [ -d "$d" ] && LD_LIBRARY_PATH="$d:${LD_LIBRARY_PATH:-}"; done; export LD_LIBRARY_PATH; fi && clj -M:test'
   build: clj -T:build
   lint: echo "No linter configured yet"
 
