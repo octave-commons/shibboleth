@@ -1,0 +1,68 @@
+{
+  "featureId": "pipeline-stages-2-3",
+  "reviewedAt": "2026-03-13T10:15:00.000Z",
+  "commitId": "1c5efd6",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation is solid and covers all feature requirements. Stage 2 (embed+cluster) correctly embeds prompts via sentence-transformers, clusters via HDBSCAN, preserves all records, and attaches cluster_ids. Stage 3 (split) implements cluster-level stratified splitting with the disjointness invariant enforced both in code and verified by an explicit check that throws on leakage. The def-pipeline macro, build!, rebuild!, and resume logic work correctly. Test coverage is comprehensive (20 new tests, 104 assertions). Found several non-blocking issues: an O(n²) noise-point lookup in the splitter, use of clojure.core/read-string instead of clojure.edn/read-string for EDN parsing, and test tolerance labels that don't match their actual values. No blocking issues found.",
+    "issues": [
+      {
+        "file": "src/promptbench/pipeline/splitter.clj",
+        "line": 118,
+        "severity": "non_blocking",
+        "description": "O(n²) performance: Inside the `mapv` in `split-clusters`, the noise-groups map is recomputed from scratch for every noise record by filtering and sorting ALL records. This map should be pre-computed once outside the mapv. With 15 records this is negligible, but at scale (thousands of noise points) this becomes a real bottleneck."
+      },
+      {
+        "file": "src/promptbench/pipeline/splitter.clj",
+        "line": 115,
+        "severity": "non_blocking",
+        "description": "Fragile duplication: The noise-point synthetic cluster ID logic is duplicated between `group-by-cluster` (lines 37-47) and the inner mapv of `split-clusters` (lines 118-126). Both use `sort-by :source-id` with `map-indexed` and `(- -2 idx)`, but this parallel derivation is error-prone — if one changes, the other must also change. Consider extracting the noise-group mapping once and reusing it."
+      },
+      {
+        "file": "src/promptbench/pipeline/core.clj",
+        "line": 175,
+        "severity": "non_blocking",
+        "description": "Security: Uses `read-string` (clojure.core/read-string) to parse canonical-records.edn in the embed-cluster fallback path. clojure.core/read-string can execute arbitrary code via reader macros (#=). Should use `clojure.edn/read-string` instead, which is safe for reading data. The risk is mitigated because the file is self-generated, but it's still bad practice."
+      },
+      {
+        "file": "test/promptbench/stages_2_3_test.clj",
+        "line": 217,
+        "severity": "non_blocking",
+        "description": "Test naming vs actual tolerance: Test `split-proportions-within-tolerance-test` docstring says '±5pp of 70/15/15' but actually uses ±15pp tolerance (0.15 absolute). This is justified by the small dataset (15 records) but the test name/docs should reflect the actual tolerance used."
+      },
+      {
+        "file": "src/promptbench/pipeline/core.clj",
+        "line": 94,
+        "severity": "non_blocking",
+        "description": "Memory scalability: `set-stage-complete!` stores the full stage result (including all records with embeddings) in the build-state atom. For large datasets, the embedding vectors (1024 floats per record) will consume significant heap memory. Consider storing only metadata or a reference to on-disk data for the embed-cluster stage."
+      },
+      {
+        "file": "src/promptbench/pipeline/splitter.clj",
+        "line": 108,
+        "severity": "non_blocking",
+        "description": "The :constraint key from config is accepted but never validated. `split-clusters` always performs cluster-disjoint splitting regardless of the :constraint value. Should either validate that :constraint is :cluster-disjoint or at minimum document that it's the only supported mode."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Worker used clojure.core/read-string for EDN parsing in core.clj:175 instead of clojure.edn/read-string. AGENTS.md doesn't mention a preference for safe EDN reading, but this is a well-known Clojure security practice that should be documented as a convention.",
+      "evidence": "src/promptbench/pipeline/core.clj:175 — `(read-string (slurp canon-file))`. Compare to all other EDN reading in the codebase which uses manifest/read-manifest (safe)."
+    },
+    {
+      "area": "skills",
+      "observation": "Worker discovered two Python bridge issues not documented in the skill: (1) HDBSCAN requires algorithm='generic' for cosine metric, (2) SentenceTransformer should be cached and forced to CPU to avoid GPU OOM. The skill's 'Python Bridge Notes' section doesn't mention these constraints. Worker's own skillFeedback.suggestedChanges correctly identifies both.",
+      "evidence": "Transcript shows worker hitting HDBSCAN BallTree error and CUDA OOM, then fixing both. skillFeedback.suggestedChanges: ['Skill should note that HDBSCAN cosine metric needs algorithm=generic and that SentenceTransformer should use CPU device and be cached']"
+    },
+    {
+      "area": "conventions",
+      "observation": "python-bridge.md library entry doesn't mention the HDBSCAN algorithm='generic' requirement for cosine metric or the model caching pattern. These are critical operational discoveries that would save future workers time.",
+      "evidence": "Worker spent multiple tool calls debugging the BallTree/cosine error (transcript shows test failures and iterative fixes). python-bridge.md only covers initialization, LD_LIBRARY_PATH, and dual site-packages."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "PASS. The implementation fully covers Stage 2 (Embed+Cluster), Stage 3 (Split), def-pipeline macro, and pipeline orchestration with resumability, idempotency, rebuild!, and build! :up-to. All 12 expectedBehavior items are addressed. The cluster-disjointness invariant is both enforced in code (throws on leakage) and tested (including a negative test that verifies detection of leaked clusters). 20 new tests (13 for stages, 7 for orchestration) with 104 assertions cover count preservation, L2 normalization, cluster ID validity, disjointness, proportions, noise handling, manifests, seed determinism, stage ordering, up-to, idempotency, resumability, and rebuild invalidation. Six non-blocking issues found: O(n²) noise lookup, duplicated noise logic, unsafe read-string, misleading test tolerance label, memory scalability of build-state, and unvalidated :constraint key. No blocking issues."
+}

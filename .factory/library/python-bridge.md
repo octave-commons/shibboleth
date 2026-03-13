@@ -36,3 +36,32 @@ The embedded Python's `site.getsitepackages()` returns `dist-packages` paths (De
 ## Model Cache
 
 The `intfloat/multilingual-e5-large` model (~2.2 GB) is downloaded to `~/.cache/huggingface/hub/` on first use. Subsequent loads use the cache.
+
+The `SentenceTransformer` model object should be cached in memory (loaded once per process). The `get-or-load-model` function in `embed.clj` handles this. **Force CPU device** (`device='cpu'`) to avoid GPU OOM on machines with limited VRAM.
+
+## HDBSCAN Cosine Metric
+
+When using HDBSCAN with `metric='cosine'`, you **must** pass `algorithm='generic'`. The default BallTree algorithm does not support cosine distance and will throw an error. Example:
+
+```python
+hdbscan.HDBSCAN(min_cluster_size=5, metric='cosine', algorithm='generic')
+```
+
+## E5 Model Query/Passage Prefix Convention
+
+The `multilingual-e5-large` model performs best when inputs are prefixed:
+- **Queries** (search queries, short texts): prefix with `"query: "`
+- **Passages** (documents, longer texts): prefix with `"passage: "`
+
+For pipeline embedding of prompts, use `"query: "` prefix. This convention is not enforced by the model but significantly affects embedding quality.
+
+## Parquet Keyword Columns
+
+The `read-parquet` function requires callers to explicitly pass `:keyword-columns` (a set of column name strings) to restore keyword types from string storage. Without this, keyword values are returned as plain strings. Track which columns contain keywords when writing and pass them on read.
+
+## NFKC Unicode Notes
+
+NFKC normalization has some non-obvious behaviors:
+- `½` (U+00BD) normalizes to `1⁄2` with fraction slash (U+2044), **not** ASCII `/` (U+002F)
+- `ﬁ` (U+FB01) normalizes to `fi` (two ASCII characters)
+- Always verify normalization output for special Unicode characters

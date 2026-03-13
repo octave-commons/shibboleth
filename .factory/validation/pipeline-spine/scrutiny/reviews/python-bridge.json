@@ -1,0 +1,67 @@
+{
+  "featureId": "python-bridge",
+  "reviewedAt": "2026-03-13T09:05:00.000Z",
+  "commitId": "8d07759",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Solid implementation of the libpython-clj bridge layer covering all three Python namespaces (embed, cluster, parquet) with comprehensive tests. All 5 expected behaviors from the feature spec are covered by 6 well-structured tests. The code is idiomatic Clojure, follows project conventions, and handles real environment challenges (pyenv dual site-packages, NVIDIA lib paths, MetadataPathFinder patch). A few minor issues noted below, none blocking.",
+    "issues": [
+      {
+        "file": "src/promptbench/python/parquet.clj",
+        "line": 21,
+        "severity": "non_blocking",
+        "description": "Dead code: `infer-keyword-columns` is defined but never called. The function infers which columns contain keyword values from the first record, but `write-parquet` doesn't use it (keywords are just serialized as strings), and `read-parquet` requires the caller to explicitly pass `:keyword-columns`. This means round-trip keyword restoration requires external knowledge of which columns are keywords, rather than being automatic. Consider either removing the dead function or using it in write-parquet to store keyword column metadata (e.g., in parquet file metadata)."
+      },
+      {
+        "file": "src/promptbench/python/embed.clj",
+        "line": 7,
+        "severity": "non_blocking",
+        "description": "Race condition in `ensure-python!`: The `when-not @initialized?` check followed by `reset! initialized? true` is not atomic. Two concurrent threads could both pass the check and double-initialize. In practice this is unlikely (tests are single-threaded, pipeline is sequential), but `locking` or `compare-and-set!` on the atom would be more robust."
+      },
+      {
+        "file": "src/promptbench/python/embed.clj",
+        "line": 68,
+        "severity": "non_blocking",
+        "description": "In the original commit, `embed-batch` re-instantiates `SentenceTransformer` on every call (loading the 2.2 GB model each time). This was correctly fixed in a subsequent commit (model caching via `get-or-load-model`), but the original commit's version would have been very slow for repeated calls. Not a blocking issue since it was caught and fixed."
+      },
+      {
+        "file": "src/promptbench/python/embed.clj",
+        "line": 68,
+        "severity": "non_blocking",
+        "description": "No input validation on `embed-batch`: passing empty texts list, nil, or non-string elements would produce cryptic Python errors rather than clear Clojure-side messages. Same applies to `cluster-embeddings` (empty/nil embeddings) and `write-parquet` (empty records)."
+      },
+      {
+        "file": "test/promptbench/python_bridge_test.clj",
+        "line": 54,
+        "severity": "non_blocking",
+        "description": "The embed tests use 'query: ' prefix in text inputs (e.g., 'query: Hello world'), which is specific to e5 models that benefit from query/passage prefixes. While this works correctly, it's worth noting this convention isn't documented — future callers may not know to use the prefix for optimal e5 model performance."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The parquet round-trip requires callers to manually track which columns contain keywords and pass them as `:keyword-columns` to `read-parquet`. This convention (keyword columns must be explicitly tracked) isn't documented in AGENTS.md or the architecture library. Future workers using parquet I/O may lose keyword types silently.",
+      "evidence": "src/promptbench/python/parquet.clj:50 — `read-parquet` defaults `keyword-columns` to `#{}`. test/promptbench/python_bridge_test.clj:119 — test manually passes `:keyword-columns #{\"category\"}`. The `infer-keyword-columns` helper exists (line 21) but is unused."
+    },
+    {
+      "area": "skills",
+      "observation": "Worker's skillFeedback suggests documenting LD_LIBRARY_PATH requirement and init.sh usage in the skill. The skill's 'Python Bridge Notes' section covers basic patterns but doesn't mention the NVIDIA/CUDA library path requirement that was a significant blocker. Worker correctly documented this in `.factory/library/python-bridge.md` instead.",
+      "evidence": "Handoff skillFeedback.suggestedChanges: ['The skill should mention that Python bridge features require LD_LIBRARY_PATH for NVIDIA CUDA libraries...', 'Consider adding a note about running .factory/init.sh before tests...']. Skill SKILL.md Python Bridge Notes section has no mention of LD_LIBRARY_PATH or NVIDIA."
+    },
+    {
+      "area": "services",
+      "observation": "The test command in services.yaml was updated from simple `clj -M:test` to a complex bash one-liner that sets LD_LIBRARY_PATH. This is correct and necessary, but the command is now very long and hard to read. The init.sh script also sets the same path — there's duplication between init.sh and the services.yaml test command.",
+      "evidence": ".factory/services.yaml test command is now 300+ chars of bash. .factory/init.sh lines 14-21 do the same NVIDIA_BASE discovery. Both were modified in commit 8d07759."
+    },
+    {
+      "area": "knowledge",
+      "observation": "Worker created `.factory/library/python-bridge.md` documenting the dual site-packages issue, LD_LIBRARY_PATH requirement, and MetadataPathFinder patch — good knowledge capture. The e5 model's 'query:' prefix convention for optimal performance is not documented anywhere though.",
+      "evidence": ".factory/library/python-bridge.md exists with detailed notes. Test uses 'query: Hello world' prefix (python_bridge_test.clj:54) but no documentation explains when/why to use query: vs passage: prefix for e5 models."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The python-bridge feature is a solid PASS. All 5 expected behaviors (bridge init, embedding shape [n,1024] with unit normalization, HDBSCAN labels >= -1 with clusters, parquet write, parquet round-trip) are fully implemented and tested. The worker dealt with significant real-world environment complexity (pyenv dual site-packages, NVIDIA CUDA library paths, torch MetadataPathFinder bug) and documented these well in .factory/library/python-bridge.md. Code is idiomatic Clojure following project conventions. Non-blocking issues: dead code in parquet.clj (infer-keyword-columns), non-atomic initialization check, lack of input validation, and undocumented e5 query prefix convention. The worker updated services.yaml and init.sh appropriately for the NVIDIA requirement. 6 tests with 57 assertions pass, covering all validation contract requirements for VAL-PIPE-001."
+}

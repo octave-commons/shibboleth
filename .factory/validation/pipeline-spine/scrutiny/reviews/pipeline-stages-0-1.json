@@ -1,0 +1,68 @@
+{
+  "featureId": "pipeline-stages-0-1",
+  "reviewedAt": "2026-03-13T09:15:00Z",
+  "commitId": "83a9847",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Stage 0 (Fetch) and Stage 1 (Canonicalize) are well-implemented with correct NFKC normalization, SHA-256 hashing, deterministic source_id generation, taxonomy mapping with unmapped-label warnings, and manifest writing. Tests are comprehensive (22 tests) covering all expectedBehavior items. The implementation is idempotent, uses deterministic ordering (sorted sources), and chains manifest hashes between stages. Code follows project conventions (atom-backed registries with reset!, cheshire for JSON, clojure.spec for validation). A few non-blocking issues noted below.",
+    "issues": [
+      {
+        "file": "src/promptbench/pipeline/manifest.clj",
+        "line": 38,
+        "severity": "non_blocking",
+        "description": "started-at and completed-at are both set to (Instant/now) at manifest creation time, making them always identical. Spec §5.3 example shows different timestamps. The stage functions should capture started-at before processing and completed-at after, or create-stage-manifest should accept optional start time."
+      },
+      {
+        "file": "src/promptbench/pipeline/stages.clj",
+        "line": 255,
+        "severity": "non_blocking",
+        "description": "Spec §5.1 shows hash values with 'sha256:' prefix (e.g., 'sha256:abc123...'), but source-id, canonical-hash, input-hash, and output-hash are all stored as raw hex strings without the prefix. If downstream consumers (e.g., build manifest, verification layer) expect the prefixed format, this will cause mismatches. Consider adding the prefix for spec compliance."
+      },
+      {
+        "file": "src/promptbench/pipeline/stages.clj",
+        "line": 107,
+        "severity": "non_blocking",
+        "description": "resolve-taxonomy has dead code: (get record \"harm_category\") and (get record \"family\") will never match because cheshire.core/parse-string with 'true' keywordizes keys, so only keyword lookups (:harm_category, :family) will ever succeed. The string fallbacks are unreachable."
+      },
+      {
+        "file": "src/promptbench/pipeline/stages.clj",
+        "line": 66,
+        "severity": "non_blocking",
+        "description": "normalize-text has no nil guard. Passing nil would cause NPE in Normalizer/normalize. The public API should handle nil gracefully (e.g., return empty string). Currently usage in canonicalize! guards with (or (:prompt row) \"\"), but the function itself is public."
+      },
+      {
+        "file": "test/promptbench/pipeline_test.clj",
+        "line": 289,
+        "severity": "non_blocking",
+        "description": "canonicalize-unmapped-labels-warn-test only asserts (some? resolved), not that :harm-category and :attack-family are :unmapped. A more specific assertion (is (= :unmapped (:harm-category resolved))) would verify the fallback behavior documented in resolve-taxonomy's docstring."
+      },
+      {
+        "file": "src/promptbench/pipeline/stages.clj",
+        "line": 176,
+        "severity": "non_blocking",
+        "description": "In fetch!, input-hash and config-hash are set to the same value (SHA-256 of {:sources, :seed, :version}). For Stage 0 there's no prior stage to chain from, so this is reasonable, but the semantic distinction between the two fields is lost. Consider using a fixed sentinel or empty-string hash for input-hash to make the difference clear."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The spec §5.1 uses 'sha256:' prefixed format for hash values (e.g., 'sha256:abc123...') but the implementation uses raw hex strings throughout. This format convention is not documented in AGENTS.md, which only says 'SHA-256 for all content hashes'. If the prefix is required, it should be documented as a convention; if not, the spec examples should clarify they're illustrative.",
+      "evidence": "Spec §5.1 shows ':source-id \"sha256:abc123...\"' and ':canonical-hash \"sha256:def456...\"', but stages.clj compute-source-id and sha256-string return raw 64-char hex strings without prefix."
+    },
+    {
+      "area": "knowledge",
+      "observation": "NFKC normalization of ½ (U+00BD) produces '1⁄2' with fraction slash U+2044, not '1/2' with regular ASCII slash. The worker discovered this during implementation and the test accounts for both possibilities. This Unicode subtlety is worth documenting in the library for future pipeline work.",
+      "evidence": "test/promptbench/pipeline_test.clj:382 — nfkc-known-characters-test checks both (= \"1⁄2\" result) and (= \"1/2\" result). Worker transcript shows a REPL verification of this behavior."
+    },
+    {
+      "area": "conventions",
+      "observation": "Manifest timestamps (started-at, completed-at) are always set to the same instant because create-stage-manifest captures time at creation, not at stage execution boundaries. If the spec §5.3 example's distinct timestamps are intentional, this timing pattern should be documented as a convention or the API should support passing start times.",
+      "evidence": "src/promptbench/pipeline/manifest.clj:38 — (let [now (str (Instant/now))] sets both :started-at and :completed-at to now."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Stage 0 (Fetch) and Stage 1 (Canonicalize) are solidly implemented with comprehensive test coverage (22 tests, all passing). The code correctly applies NFKC normalization, SHA-256 hashing, deterministic source_id generation, taxonomy mapping with unmapped-label warnings, and manifest writing. Both stages are idempotent. The synthetic fixture dataset (15 JSONL prompts) covers multiple languages and harm categories. Six non-blocking issues were identified: identical started-at/completed-at timestamps, missing 'sha256:' prefix vs spec, dead code in taxonomy resolution, no nil guard on normalize-text, weak assertion in unmapped-labels test, and redundant input-hash/config-hash in fetch. The worker followed the skill procedure and produced clean, well-documented code following project conventions."
+}

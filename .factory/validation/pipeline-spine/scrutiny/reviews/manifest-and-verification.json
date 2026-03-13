@@ -1,0 +1,51 @@
+{
+  "featureId": "manifest-and-verification",
+  "reviewedAt": "2026-03-13T09:15:00.000Z",
+  "commitId": "ba4a72333418e0803f6feffd041907b3cba0b685",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Solid implementation covering all required functionality: build manifest aggregation, checksum verification, 4 verification checks (cluster-disjoint-splits, variant-split-consistency, duplicate-detection, label-distribution-sane) with correct fatal/non-fatal behavior, verify! runner, and parquet schema validation with 12 columns. 26 well-structured tests cover valid and corrupted data paths. Code is clean, idiomatic Clojure with good separation of concerns across manifest.clj, checks.clj, and core.clj. All expectedBehavior items are fulfilled.",
+    "issues": [
+      {
+        "file": "src/promptbench/verification/core.clj",
+        "line": 12,
+        "severity": "non_blocking",
+        "description": "Missing explicit requires for clojure.string and clojure.set in the ns :require form. The namespace uses clojure.string/replace (lines 49, 93), clojure.string/join (line 158), and clojure.set/difference (lines 72, 73) via fully-qualified calls without requiring the namespaces. This works due to transitive loading (checks.clj requires clojure.set, manifest.clj requires clojure.string) but is fragile and non-idiomatic — if loading order changes, this could break at runtime."
+      },
+      {
+        "file": "src/promptbench/verification/core.clj",
+        "line": 86,
+        "severity": "non_blocking",
+        "description": "Dead code: the 'required-cols' binding is computed (set of required column names) but never referenced. The for comprehension on line 88 uses (filter :required parquet-columns) directly instead of the computed set."
+      },
+      {
+        "file": "src/promptbench/verification/core.clj",
+        "line": 51,
+        "severity": "non_blocking",
+        "description": "validate-parquet-schema docstring claims it checks 'Column types are correct' (item 3), but the implementation only validates column count and null values in required columns. No actual data type checking is performed (e.g., verifying source_row_id values are integers). The parquet-schema-correct-types-test only validates the schema definition metadata, not runtime data types. This is acceptable since Parquet enforces types at the file level, but the docstring is misleading."
+      },
+      {
+        "file": "src/promptbench/pipeline/manifest.clj",
+        "line": 86,
+        "severity": "non_blocking",
+        "description": "get-git-commit shells out to 'git rev-parse --short HEAD' but doesn't close the Process error stream or call .destroy() on the Process object. This is a minor resource leak. Consider using ProcessBuilder with redirectErrorStream or a try-with-resources pattern."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Worker used fully-qualified clojure.string and clojure.set calls in verification/core.clj without adding them to the ns :require form. AGENTS.md says 'Idiomatic Clojure' but doesn't explicitly mandate that all used namespaces appear in :require. This fragile pattern could be prevented by documenting: 'All namespaces used in a file MUST be listed in the ns :require form, even when using fully-qualified calls.'",
+      "evidence": "src/promptbench/verification/core.clj line 12 — :require only has [promptbench.verification.checks :as checks], but lines 49, 72-73, 93, 158 use clojure.string and clojure.set fully-qualified."
+    },
+    {
+      "area": "conventions",
+      "observation": "Worker followed TDD procedure correctly (wrote tests first, confirmed RED, then implemented GREEN). The skill procedure was followed as confirmed by skillFeedback.followedProcedure=true. No deviations noted.",
+      "evidence": "Transcript shows test file created before implementation files, with explicit test failure verification step."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "PASS. The manifest-and-verification feature is well-implemented with comprehensive test coverage. All 11 expectedBehavior items from the feature spec are fulfilled: stage manifests with all required fields, checksum verification, config hash sensitivity, build manifest aggregation, all 4 verification checks with correct pass/fail behavior, verify! runner with fatal/non-fatal semantics, and parquet schema validation. Four non-blocking issues were found: missing explicit ns requires for clojure.string/clojure.set in core.clj (fragile transitive loading), dead code (unused required-cols binding), misleading docstring about type validation, and unclosed process streams in get-git-commit. None of these affect correctness or test results."
+}

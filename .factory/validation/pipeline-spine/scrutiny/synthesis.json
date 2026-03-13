@@ -1,0 +1,126 @@
+{
+  "milestone": "pipeline-spine",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "bash -c 'NVIDIA_BASE=\"$(python3 -c \"import sys,os;print(os.path.join(sys.prefix,\\\"lib\\\",f\\\"python{sys.version_info.major}.{sys.version_info.minor}\\\",\\\"site-packages\\\",\\\"nvidia\\\"))\" 2>/dev/null||true)\" && if [ -d \"${NVIDIA_BASE:-}\" ]; then for d in \"$NVIDIA_BASE\"/*/lib; do [ -d \"$d\" ] && LD_LIBRARY_PATH=\"$d:${LD_LIBRARY_PATH:-}\"; done; export LD_LIBRARY_PATH; fi && clj -M:test'", "exitCode": 0, "details": "213 tests, 1323 assertions, 0 failures, 0 errors" },
+    "typecheck": { "passed": true, "command": "N/A — Clojure is dynamically typed, no typecheck configured", "exitCode": 0 },
+    "lint": { "passed": true, "command": "echo 'No linter configured yet'", "exitCode": 0, "details": "No linter configured per services.yaml" }
+  },
+  "reviewsSummary": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "nonBlockingIssues": [
+    {
+      "featureId": "python-bridge",
+      "count": 5,
+      "highlights": [
+        "Dead code: infer-keyword-columns defined but unused in parquet.clj",
+        "Non-atomic ensure-python! initialization check (race condition)",
+        "No input validation on embed-batch, cluster-embeddings, write-parquet",
+        "Undocumented e5 query/passage prefix convention"
+      ]
+    },
+    {
+      "featureId": "pipeline-stages-0-1",
+      "count": 6,
+      "highlights": [
+        "Manifest started-at and completed-at always identical (both set at creation)",
+        "Hash values use raw hex instead of 'sha256:' prefix per spec §5.1",
+        "Dead code in resolve-taxonomy string-key fallbacks (cheshire keywordizes)",
+        "No nil guard on public normalize-text function"
+      ]
+    },
+    {
+      "featureId": "pipeline-stages-2-3",
+      "count": 6,
+      "highlights": [
+        "O(n²) noise-point lookup in splitter (recomputes per record)",
+        "Duplicated noise-group logic between group-by-cluster and split-clusters",
+        "Uses clojure.core/read-string instead of clojure.edn/read-string (security)",
+        "Test tolerance mislabeled (says ±5pp, uses ±15pp)",
+        "Memory scalability: build-state atom stores full embeddings"
+      ]
+    },
+    {
+      "featureId": "manifest-and-verification",
+      "count": 4,
+      "highlights": [
+        "Missing explicit ns requires for clojure.string and clojure.set in core.clj",
+        "Dead code: unused required-cols binding",
+        "Misleading docstring about type validation in validate-parquet-schema",
+        "Unclosed process streams in get-git-commit"
+      ]
+    }
+  ],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Added HDBSCAN cosine metric algorithm='generic' requirement to python-bridge.md",
+      "sourceFeature": "pipeline-stages-2-3"
+    },
+    {
+      "target": "library",
+      "description": "Added SentenceTransformer model caching and CPU device forcing guidance to python-bridge.md",
+      "sourceFeature": "pipeline-stages-2-3"
+    },
+    {
+      "target": "library",
+      "description": "Added e5 query/passage prefix convention to python-bridge.md",
+      "sourceFeature": "python-bridge"
+    },
+    {
+      "target": "library",
+      "description": "Added parquet keyword-columns tracking convention to python-bridge.md",
+      "sourceFeature": "python-bridge"
+    },
+    {
+      "target": "library",
+      "description": "Added NFKC Unicode normalization notes (½ → 1⁄2 with U+2044) to python-bridge.md",
+      "sourceFeature": "pipeline-stages-0-1"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add convention: 'Always use clojure.edn/read-string (not clojure.core/read-string) for reading EDN data files. clojure.core/read-string can execute arbitrary code via reader macros (#=).'",
+      "evidence": "pipeline-stages-2-3 used clojure.core/read-string in core.clj:175 to parse canonical-records.edn. While the file is self-generated, this pattern could spread to other workers. The reviewer and the clojure-dsl-worker skill should flag this.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add convention: 'All namespaces used in a file MUST be listed in the ns :require form, even when using fully-qualified calls. Do not rely on transitive loading.'",
+      "evidence": "manifest-and-verification worker used clojure.string and clojure.set via fully-qualified calls in verification/core.clj without requiring them. This works due to transitive loading but is fragile.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Clarify hash format convention: Decide whether hash values should use 'sha256:' prefix (as shown in spec §5.1 examples) or raw 64-char hex strings (as implemented). Document the chosen convention.",
+      "evidence": "Spec §5.1 shows ':source-id \"sha256:abc123...\"' but all implementations (stages.clj, manifest.clj) use raw hex. Multiple features (pipeline-stages-0-1, manifest-and-verification) followed the raw hex pattern. This should be explicitly documented to prevent future confusion.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "Worker skillFeedback suggests documenting LD_LIBRARY_PATH requirement in the clojure-dsl-worker skill",
+      "reason": "already-documented — This is already captured in .factory/library/python-bridge.md and the services.yaml test command handles it automatically. Skill changes are out of scope for this validator."
+    },
+    {
+      "observation": "Manifest timestamps (started-at, completed-at) are always identical",
+      "reason": "ambiguous — Whether distinct timestamps are required is unclear from the spec. The current behavior is functional; changing the API signature is a design decision for the orchestrator. Noted as non-blocking issue but not actionable here."
+    },
+    {
+      "observation": "Worker followed TDD procedure correctly (observation from manifest-and-verification review)",
+      "reason": "Not actionable — positive observation, no state change needed."
+    },
+    {
+      "observation": "init.sh and services.yaml test command duplication for LD_LIBRARY_PATH setup",
+      "reason": "ambiguous — Both serve different purposes (init.sh for interactive setup, services.yaml for automated test running). Deduplication would require design decision about which is authoritative."
+    }
+  ],
+  "previousRound": null
+}
