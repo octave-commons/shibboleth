@@ -3,6 +3,7 @@
   (:require [libpython-clj2.python :as py]))
 
 (defonce ^:private initialized? (atom false))
+(defonce ^:private model-cache (atom {}))
 
 (defn- add-nvidia-lib-paths!
   "Add NVIDIA shared-library directories so torch can find CUDA libraries
@@ -66,6 +67,19 @@ if hasattr(_im, 'MetadataPathFinder'):
 ")
     (reset! initialized? true)))
 
+(defn- get-or-load-model
+  "Get a cached model or load a new one. Models are cached by name
+   to avoid repeated loading and GPU OOM issues."
+  [model-name]
+  (if-let [cached (get @model-cache model-name)]
+    cached
+    (let [st    (py/import-module "sentence_transformers")
+          model (py/call-attr-kw st "SentenceTransformer"
+                  [model-name]
+                  {:device "cpu"})]
+      (swap! model-cache assoc model-name model)
+      model)))
+
 (defn embed-batch
   "Embed a batch of texts using sentence-transformers via libpython-clj.
    Returns a vector of vectors, each of dimension matching the model
@@ -78,8 +92,7 @@ if hasattr(_im, 'MetadataPathFinder'):
      (embed-batch [\"hello\" \"world\"] \"intfloat/multilingual-e5-large\")"
   [texts model-name & {:keys [batch-size] :or {batch-size 256}}]
   (ensure-python!)
-  (let [st         (py/import-module "sentence_transformers")
-        model      (py/call-attr st "SentenceTransformer" model-name)
+  (let [model      (get-or-load-model model-name)
         texts-py   (py/->py-list (vec texts))
         emb-np     (py/call-attr-kw model "encode"
                      [texts-py]

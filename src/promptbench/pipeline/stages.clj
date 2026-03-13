@@ -10,12 +10,22 @@
    labels to taxonomy via taxonomy-mapping, output records with all
    required fields.
 
-   Both stages are idempotent and write manifests per spec §5.3."
+   Stage 2 (Embed + Cluster): Embed all canonical prompts via
+   sentence-transformers, cluster via HDBSCAN, assign cluster_ids.
+   No records dropped.
+
+   Stage 3 (Split): Cluster-level stratified split (70/15/15) with
+   enforced disjointness invariant.
+
+   All stages are idempotent and write manifests per spec §5.3."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [cheshire.core :as json]
             [promptbench.pipeline.sources :as sources]
-            [promptbench.pipeline.manifest :as manifest])
+            [promptbench.pipeline.manifest :as manifest]
+            [promptbench.pipeline.splitter :as splitter]
+            [promptbench.python.embed :as embed]
+            [promptbench.python.cluster :as cluster])
   (:import [java.security MessageDigest]
            [java.nio.file Files Paths StandardCopyOption]
            [java.text Normalizer Normalizer$Form]))
@@ -329,3 +339,157 @@
                               (str manifests-dir "/canonicalize-manifest.edn"))
     {:manifest stage-manifest
      :records all-records}))
+
+;; ============================================================
+;; Stage 2: Embed + Cluster
+;; ============================================================
+
+(defn embed-cluster!
+  "Stage 2: Embed all canonical prompts and cluster them.
+
+   Embeds each prompt's canonical text using sentence-transformers,
+   then clusters embeddings using HDBSCAN. No records are dropped.
+
+   Config map keys:
+   :records    — vector of canonical records from Stage 1
+   :data-dir   — base data directory (default: 'data')
+   :seed       — integer build seed
+   :version    — pipeline version string
+   :embedding  — {:model str, :batch-size int}
+   :clustering — {:min-cluster-size int, :metric str}
+
+   Returns:
+   {:manifest <stage-manifest>
+    :records  [<record-with-embedding-and-cluster-id> ...]}
+
+   Each output record gains :embedding (vector of doubles) and
+   :cluster-id (integer >= -1, where -1 = noise).
+
+   Idempotent: same input + seed produces identical output."
+  [{:keys [records data-dir seed version embedding clustering]
+    :or   {data-dir "data" version "0.1.0"}}]
+  (let [manifests-dir (str data-dir "/manifests")
+        embedded-dir (str data-dir "/embedded")
+        _ (.mkdirs (io/file manifests-dir))
+        _ (.mkdirs (io/file embedded-dir))
+        ;; Extract texts for embedding (use canonical-text)
+        texts (mapv :canonical-text records)
+        model-name (or (:model embedding) "intfloat/multilingual-e5-large")
+        batch-size (or (:batch-size embedding) 256)
+        ;; Embed all texts
+        embeddings (embed/embed-batch texts model-name :batch-size batch-size)
+        ;; Cluster embeddings
+        min-cluster-size (or (:min-cluster-size clustering) 5)
+        metric (or (:metric clustering) "cosine")
+        labels (cluster/cluster-embeddings embeddings
+                 :min-cluster-size min-cluster-size
+                 :metric metric)
+        ;; Attach embeddings and cluster-ids to records
+        enriched-records (mapv (fn [record emb label]
+                                 (assoc record
+                                        :embedding (vec emb)
+                                        :cluster-id (long label)))
+                               records embeddings labels)
+        ;; Write enriched records as EDN (without embeddings for size)
+        cluster-file (str embedded-dir "/cluster-assignments.edn")
+        cluster-data (mapv #(select-keys % [:source-id :cluster-id]) enriched-records)
+        _ (spit cluster-file (pr-str cluster-data))
+        ;; Compute checksums and manifest
+        cluster-checksum (sha256-file cluster-file)
+        checksums {"embedded/cluster-assignments.edn" cluster-checksum}
+        ;; Chain input hash from canonicalize manifest
+        canon-manifest-path (str manifests-dir "/canonicalize-manifest.edn")
+        input-hash (if (.exists (io/file canon-manifest-path))
+                     (:output-hash (manifest/read-manifest canon-manifest-path))
+                     (sha256-string "no-canonicalize-manifest"))
+        output-hash (sha256-string (pr-str (into (sorted-map) checksums)))
+        config-hash (sha256-string
+                      (pr-str {:embedding {:model model-name
+                                           :batch-size batch-size}
+                               :clustering {:min-cluster-size min-cluster-size
+                                            :metric metric}
+                               :seed seed
+                               :version version}))
+        stage-manifest (manifest/create-stage-manifest
+                         {:stage :embed-cluster
+                          :version version
+                          :seed seed
+                          :input-hash input-hash
+                          :output-hash output-hash
+                          :artifact-count (count enriched-records)
+                          :config-hash config-hash
+                          :checksums checksums})]
+    (manifest/write-manifest! stage-manifest
+                              (str manifests-dir "/embed-cluster-manifest.edn"))
+    {:manifest stage-manifest
+     :records enriched-records}))
+
+;; ============================================================
+;; Stage 3: Split
+;; ============================================================
+
+(defn split!
+  "Stage 3: Cluster-level stratified split.
+
+   Assigns each prompt to exactly one of :train, :dev, :test splits.
+   The KEY INVARIANT: no cluster ID appears in more than one split.
+
+   Config map keys:
+   :records  — vector of records from Stage 2 (with :cluster-id)
+   :data-dir — base data directory (default: 'data')
+   :seed     — integer build seed
+   :version  — pipeline version string
+   :split    — {:train 0.70 :dev 0.15 :test 0.15
+                :stratify-by [:intent-label :attack-family :canonical-lang]
+                :constraint :cluster-disjoint}
+
+   Returns:
+   {:manifest <stage-manifest>
+    :records  [<record-with-split> ...]}
+
+   Idempotent: same input + seed produces identical output."
+  [{:keys [records data-dir seed version split]
+    :or   {data-dir "data" version "0.1.0"}}]
+  (let [manifests-dir (str data-dir "/manifests")
+        split-dir (str data-dir "/split")
+        _ (.mkdirs (io/file manifests-dir))
+        _ (.mkdirs (io/file split-dir))
+        ;; Perform cluster-disjoint split
+        split-config (or split {:train 0.70 :dev 0.15 :test 0.15
+                                :stratify-by [:intent-label :attack-family :canonical-lang]
+                                :constraint :cluster-disjoint})
+        split-records (splitter/split-clusters records split-config seed)
+        ;; Verify disjointness invariant
+        disjointness (splitter/verify-disjointness split-records)
+        _ (when-not (:passed disjointness)
+            (throw (ex-info "FATAL: cluster leakage detected — this is a bug in the splitter"
+                            {:leaks (:leaks disjointness)})))
+        ;; Write split assignments as EDN
+        split-file (str split-dir "/split-assignments.edn")
+        split-data (mapv #(select-keys % [:source-id :cluster-id :split]) split-records)
+        _ (spit split-file (pr-str split-data))
+        ;; Checksums and manifest
+        split-checksum (sha256-file split-file)
+        checksums {"split/split-assignments.edn" split-checksum}
+        embed-manifest-path (str manifests-dir "/embed-cluster-manifest.edn")
+        input-hash (if (.exists (io/file embed-manifest-path))
+                     (:output-hash (manifest/read-manifest embed-manifest-path))
+                     (sha256-string "no-embed-cluster-manifest"))
+        output-hash (sha256-string (pr-str (into (sorted-map) checksums)))
+        config-hash (sha256-string
+                      (pr-str {:split split-config
+                               :seed seed
+                               :version version}))
+        stage-manifest (manifest/create-stage-manifest
+                         {:stage :split
+                          :version version
+                          :seed seed
+                          :input-hash input-hash
+                          :output-hash output-hash
+                          :artifact-count (count split-records)
+                          :config-hash config-hash
+                          :checksums checksums})]
+    (manifest/write-manifest! stage-manifest
+                              (str manifests-dir "/split-manifest.edn"))
+    {:manifest stage-manifest
+     :records split-records}))
