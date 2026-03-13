@@ -91,6 +91,18 @@ Three curated families established: `persona-injections/`, `authority-escalation
 
 Coverage analysis added `source-contribution` and `transform-gap-analysis` as standalone functions in `promptbench.metrics.coverage`, not registered via `def-metric` / `register-coverage-metrics!`. These are analysis utilities (not pipeline metrics) and are called directly by the CLI coverage report.
 
+## Testing Patterns
+
+**Mock MT for proxy-free tests**: Integration tests that need MT-like behavior should use a mock MT transform to avoid dependency on the live proxy (which requires `PROXY_AUTH_TOKEN`). Pattern established in `test/promptbench/multilingual_pipeline_integration_test.clj`:
+```clojure
+(defn mock-mt [text config seed]
+  {:text (str "[MT:" (:target-lang config) "] " text)
+   :metadata {:transform :mt :target-lang (:target-lang config) :seed seed}})
+```
+Register as `:mt` transform type before running pipeline stages that invoke MT. The 4 pre-existing MT test errors in `transform_mt_test.clj` are from tests that intentionally use the real proxy.
+
+**clj-http default throw behavior**: `clj-http` throws `ExceptionInfo` by default on non-2xx HTTP responses. Do NOT add manual status-code checks after `http/get` unless you also pass `:throw-exceptions false` in the options map. Without that option, a `when-not (2xx?)` guard is dead code — the exception fires before the check executes.
+
 ## Spec Reference
 
 Full DSL design: `/home/err/devel/specs/drafts/guardrail-promptbench-dsl.md`

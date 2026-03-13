@@ -1,0 +1,63 @@
+{
+  "milestone": "multilingual-corpus",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "source .env && export PROXY_AUTH_TOKEN && bash -c 'NVIDIA_BASE=\"$(python3 -c \"import sys,os;print(os.path.join(sys.prefix,\\\"lib\\\",f\\\"python{sys.version_info.major}.{sys.version_info.minor}\\\",\\\"site-packages\\\",\\\"nvidia\\\"))\" 2>/dev/null||true)\" && if [ -d \"${NVIDIA_BASE:-}\" ]; then for d in \"$NVIDIA_BASE\"/*/lib; do [ -d \"$d\" ] && LD_LIBRARY_PATH=\"$d:${LD_LIBRARY_PATH:-}\"; done; export LD_LIBRARY_PATH; fi && clj -M:test'",
+      "exitCode": 0,
+      "details": "463 tests, 3377 assertions, 0 failures, 0 errors"
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "N/A — Clojure is dynamically typed; no typecheck validator per AGENTS.md",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "echo 'No linter configured yet'",
+      "exitCode": 0,
+      "details": "No linter configured in services.yaml"
+    }
+  },
+  "reviewsSummary": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Added testing patterns section to architecture.md: mock-MT pattern for proxy-free integration tests, and clj-http default throw behavior note",
+      "sourceFeature": "multilingual-pipeline-integration, multilingual-source-registration"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add convention for ^:private vs public data vars: prefer public for pure data maps/tables that tests or other namespaces may legitimately need (e.g., lang-names, word-tables). Reserve ^:private for internal mutable state or implementation helpers. Alternative: use (var ns/private-var) in tests to access private vars without widening API.",
+      "evidence": "tier2-language-support changed mt/lang-names and codemix/word-tables from ^:private to public solely for test access. No documented convention exists for when data vars should be private vs public.",
+      "isSystemic": false
+    },
+    {
+      "target": "skills",
+      "suggestion": "Add exception to 'Write tests first (RED)' in clojure-dsl-worker skill for pure data-addition features (adding entries to lookup maps, word tables, etc.) where writing failing tests before the data exists provides no diagnostic value.",
+      "evidence": "tier2-language-support worker noted in skillFeedback that RED-GREEN TDD is not useful for data-addition features. The deviation was justified and produced clean results.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "Worker added clojure.edn/read-string usage in stages.clj without explicit namespace require, relying on transitive loading",
+      "reason": "already-documented — AGENTS.md already contains explicit-require convention. The specific violation is a non-blocking code issue already flagged in the review, not a guidance gap."
+    },
+    {
+      "observation": "Dual source-registration + raw copy pattern in tests may indicate pipeline fetch/canonicalize boundary confusion",
+      "reason": "ambiguous — this pattern is a legitimate test setup technique (pre-staging raw files before running canonicalize). The pipeline boundary is clear (fetch downloads, canonicalize reads). The pattern reflects test isolation needs, not architectural confusion."
+    }
+  ],
+  "previousRound": null
+}

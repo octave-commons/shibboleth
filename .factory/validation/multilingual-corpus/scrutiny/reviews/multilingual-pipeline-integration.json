@@ -1,0 +1,39 @@
+{
+  "featureId": "multilingual-pipeline-integration",
+  "reviewedAt": "2026-03-13T23:45:00.000Z",
+  "commitId": "b57a58e",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Comprehensive multilingual pipeline integration test suite (741 lines, 13 tests, 82 assertions). Covers all 4 feature requirements: (1) pipelines/v1.edn already had all 4 external sources from prior work — worker correctly identified this and didn't duplicate. (2) Integration tests with mixed-language fixture (en/es/ar/fr/zh) verify full pipeline stages 0-6, language presence in canonical records, multilingual splits, MT variants for non-English prompts, and language-coverage metric. (3) Aya-style language label preservation tested through canonicalize with all 8 languages (en/hi/fr/es/ru/ar/sr/fil), including canonical-lang matching and coverage metric reporting. (4) Cross-language dedup correctness tested from both directions: same-meaning different-language texts survive dedup, and identical same-language texts across sources are correctly deduped. Test infrastructure is well-structured with proper registry resets, temp directory lifecycle, mock MT transform to avoid proxy dependency, and comprehensive taxonomy setup.",
+    "issues": [
+      {
+        "file": "test/promptbench/multilingual_pipeline_integration_test.clj",
+        "line": 637,
+        "severity": "non_blocking",
+        "description": "Source registrations for :dedup-src1 and :dedup-src2 omit the :schema key, while all other source registrations in this file include it. :schema is optional per the spec, so this works, but it's inconsistent with the rest of the test file's patterns."
+      },
+      {
+        "file": "test/promptbench/multilingual_pipeline_integration_test.clj",
+        "line": 195,
+        "severity": "non_blocking",
+        "description": "Category :identity-manipulation lists :children [:persona-injection :authority-impersonation :developer-mode] which are attack family names, not sub-category names. Semantically, categories should have sub-categories as children and families reference categories via :parent. This works in practice because the test taxonomy is minimal and the children list is likely unused, but it's conceptually imprecise."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Worker used a mock MT transform (mock-mt) to avoid proxy dependency in integration tests. This is a good pattern that should be documented — all 4 pre-existing MT test errors in the full suite come from the real proxy being unavailable. Tests that need MT-like behavior should use mock-mt consistently to avoid environmental failures.",
+      "evidence": "test/promptbench/multilingual_pipeline_integration_test.clj:155-163 defines mock-mt; handoff notes 'Uses local JSONL fixtures with mock MT transform to avoid proxy dependency'"
+    },
+    {
+      "area": "conventions",
+      "observation": "Worker's test uses (io/copy (io/file fixture-path) (io/file raw-file)) to place fixture data in data/raw/ before running canonicalize!, in addition to registering the source with :path. This dual-setup pattern (source registration + manual raw copy) appears in multiple tests and may indicate the pipeline's fetch-vs-canonicalize boundary isn't fully clear to workers.",
+      "evidence": "test/promptbench/multilingual_pipeline_integration_test.clj:482-483, 521-522, 554-555 all show the io/copy-to-raw pattern alongside source registration with :path"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "PASS. The implementation fully covers VAL-MULTI-003 (aya language label preservation through canonicalize, 8 languages verified) and VAL-MULTI-006 (full e2e pipeline stages 0-6 with mixed-language fixture, MT variants for non-English prompts, language-coverage metric). Cross-language dedup correctness is thoroughly tested from both directions. Pipeline reproducibility with multilingual input is verified. All 13 tests pass with 82 assertions and zero regressions in the full suite. Two non-blocking style issues noted (inconsistent :schema omission, imprecise category children). No blocking issues found."
+}

@@ -1,0 +1,51 @@
+{
+  "featureId": "multilingual-source-registration",
+  "reviewedAt": "2026-03-13T23:45:00.000Z",
+  "commitId": "d144a89",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Solid implementation. All 4 external sources (aya-redteaming, harmbench, advbench, toxicchat) registered with correct URLs, formats, licenses, and schema/field-mappings. URL-based fetch via clj-http downloads both CSV and Parquet correctly. Format-dispatched reading in canonicalize works for :jsonl, :csv, :parquet. Field extraction helpers (text, language, harm-category) properly use field-mapping with legacy fallbacks. ToxicChat intent derivation from toxicity+jailbreaking columns handles the 0-is-falsy edge case correctly. JSONL backwards compatibility preserved. 15 tests with 65 assertions provide good coverage. 778 lines added across 4 files with clean architecture.",
+    "issues": [
+      {
+        "file": "src/promptbench/pipeline/stages.clj",
+        "line": 338,
+        "severity": "non_blocking",
+        "description": "Dead code in download-url!: The `when-not (<= 200 (:status resp) 299)` status check is unreachable because clj-http throws ExceptionInfo by default on non-2xx responses. The throw will never execute. Either add `:throw-exceptions false` to the http/get options map and rely on this check, or remove the dead code."
+      },
+      {
+        "file": "src/promptbench/pipeline/stages.clj",
+        "line": 185,
+        "severity": "non_blocking",
+        "description": "clojure.edn/read-string used in read-source-file's :edn branch without explicit (:require [clojure.edn ...]) in the ns form. It works via transitive loading from promptbench.pipeline.manifest, but this violates the project's explicit-require convention (AGENTS.md: 'Never rely on transitive namespace loading'). The :edn path is not exercised by any of the 4 new sources, so this is latent."
+      },
+      {
+        "file": "src/promptbench/pipeline/stages.clj",
+        "line": 520,
+        "severity": "non_blocking",
+        "description": "ToxicChat intent derivation uses (= 1 jailbreaking) and (= 1 toxicity) for binary columns. While correct for the ToxicChat schema (0/1 values), using (pos? jailbreaking) would be more robust against non-binary annotations (e.g., severity scores > 1) from future datasets reusing this code path."
+      },
+      {
+        "file": "src/promptbench/corpus/external.clj",
+        "line": 99,
+        "severity": "non_blocking",
+        "description": "register-all! idempotency guard only checks aya-redteaming. If a partial registration occurs (aya-redteaming registered but not others), the guard skips re-registration. Acceptable for current usage pattern but could be more defensive with (every? sources/get-source [:aya-redteaming :harmbench :advbench :toxicchat])."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Worker added clojure.edn/read-string usage in stages.clj without a namespace require, relying on transitive loading. AGENTS.md documents the explicit-require convention but doesn't call out clojure.edn specifically as a commonly-missed case. This pattern could recur.",
+      "evidence": "src/promptbench/pipeline/stages.clj:185 uses clojure.edn/read-string but ns form at line 20-30 does not include clojure.edn. Other files (manifest.clj, core.clj, cli.clj) correctly require it explicitly."
+    },
+    {
+      "area": "conventions",
+      "observation": "Worker used clj-http with default throw-on-error behavior but also added a manual status check that can never execute. This dead-code pattern suggests the interaction between clj-http defaults and explicit error handling isn't documented. A note about clj-http's default throw behavior could prevent this.",
+      "evidence": "src/promptbench/pipeline/stages.clj:338 — download-url! has (when-not (<= 200 (:status resp) 299) ...) after an http/get call that will throw before returning non-2xx."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature passes review. All 4 external multilingual dataset sources are correctly registered with proper URLs, formats, licenses, and schema field-mappings per the feature description. URL-based fetch in Stage 0 implemented via clj-http with byte-array handling for both CSV and Parquet. Canonicalize stage updated with format-dispatched reading and field-extraction helpers using field-mapping. ToxicChat intent derivation from toxicity/jailbreaking columns works correctly. JSONL backwards compatibility preserved. 15 new tests with 65 assertions provide solid coverage. 4 non-blocking issues noted: dead status-check code in download-url!, missing explicit require for clojure.edn, narrowly-typed ToxicChat intent check (= 1 vs pos?), and single-source idempotency guard. None affect correctness for the current use case."
+}
