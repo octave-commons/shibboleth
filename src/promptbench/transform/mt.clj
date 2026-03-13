@@ -26,12 +26,17 @@
 ;; Language names for translation prompts
 ;; ============================================================
 
-(def ^:private lang-names
-  {:es "Spanish" :fr "French" :de "German" :ja "Japanese"
+(def lang-names
+  "Language names for translation prompts.
+   Contains all 20 languages: 10 tier-1 + 10 tier-2."
+  {;; Tier-1 languages (10)
+   :es "Spanish" :fr "French" :de "German" :ja "Japanese"
    :zh "Chinese" :ar "Arabic" :hi "Hindi" :pt "Portuguese"
-   :ru "Russian" :ko "Korean" :it "Italian" :nl "Dutch"
-   :tr "Turkish" :vi "Vietnamese" :th "Thai" :pl "Polish"
-   :sv "Swedish" :da "Danish" :fi "Finnish" :no "Norwegian"})
+   :ru "Russian" :ko "Korean"
+   ;; Tier-2 languages (10)
+   :tl "Tagalog" :sw "Swahili" :ur "Urdu" :bn "Bengali"
+   :th "Thai" :vi "Vietnamese" :id "Indonesian" :tr "Turkish"
+   :fa "Persian" :he "Hebrew"})
 
 ;; ============================================================
 ;; Translation via proxy

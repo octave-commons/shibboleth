@@ -19,9 +19,10 @@
 ;; for common English words into target languages.
 ;; ============================================================
 
-(def ^:private word-tables
+(def word-tables
   "Simple bilingual word tables for code-mixing.
-   Maps language keyword to a map of English words to target language words."
+   Maps language keyword to a map of English words to target language words.
+   Contains tier-1 (10) and tier-2 Latin-script feasible (5) languages."
   {:es {"hello" "hola" "world" "mundo" "the" "el" "is" "es" "a" "un"
         "this" "esto" "that" "eso" "and" "y" "or" "o" "not" "no"
         "I" "yo" "you" "tú" "he" "él" "she" "ella" "we" "nosotros"
@@ -59,7 +60,38 @@
    :ru {"hello" "привет" "world" "мир" "the" "этот" "is" "есть" "a" "один"
         "this" "это" "that" "то" "and" "и" "or" "или" "not" "не"}
    :ko {"hello" "안녕하세요" "world" "세계" "the" "그" "is" "이다" "a" "하나"
-        "this" "이것" "that" "그것" "and" "그리고" "or" "또는" "not" "않다"}})
+        "this" "이것" "that" "그것" "and" "그리고" "or" "또는" "not" "않다"}
+   ;; Tier-2 languages (Latin-script feasible)
+   :tr {"hello" "merhaba" "world" "dünya" "the" "bu" "is" "dir" "a" "bir"
+        "this" "bu" "that" "şu" "and" "ve" "or" "veya" "not" "değil"
+        "I" "ben" "you" "sen" "he" "o" "she" "o" "we" "biz"
+        "good" "iyi" "bad" "kötü" "big" "büyük" "small" "küçük"
+        "how" "nasıl" "what" "ne" "where" "nerede" "when" "ne zaman"
+        "with" "ile" "from" "den" "to" "e" "in" "de" "on" "üzerinde"}
+   :vi {"hello" "xin chào" "world" "thế giới" "the" "cái" "is" "là" "a" "một"
+        "this" "này" "that" "kia" "and" "và" "or" "hoặc" "not" "không"
+        "I" "tôi" "you" "bạn" "he" "anh ấy" "she" "cô ấy" "we" "chúng tôi"
+        "good" "tốt" "bad" "xấu" "big" "lớn" "small" "nhỏ"
+        "how" "thế nào" "what" "gì" "where" "đâu" "when" "khi nào"
+        "with" "với" "from" "từ" "to" "đến" "in" "trong" "on" "trên"}
+   :id {"hello" "halo" "world" "dunia" "the" "itu" "is" "adalah" "a" "satu"
+        "this" "ini" "that" "itu" "and" "dan" "or" "atau" "not" "tidak"
+        "I" "saya" "you" "kamu" "he" "dia" "she" "dia" "we" "kami"
+        "good" "bagus" "bad" "buruk" "big" "besar" "small" "kecil"
+        "how" "bagaimana" "what" "apa" "where" "dimana" "when" "kapan"
+        "with" "dengan" "from" "dari" "to" "ke" "in" "di" "on" "pada"}
+   :sw {"hello" "habari" "world" "dunia" "the" "hiyo" "is" "ni" "a" "moja"
+        "this" "hii" "that" "hiyo" "and" "na" "or" "au" "not" "si"
+        "I" "mimi" "you" "wewe" "he" "yeye" "she" "yeye" "we" "sisi"
+        "good" "nzuri" "bad" "mbaya" "big" "kubwa" "small" "ndogo"
+        "how" "vipi" "what" "nini" "where" "wapi" "when" "lini"
+        "with" "na" "from" "kutoka" "to" "kwa" "in" "katika" "on" "juu"}
+   :tl {"hello" "kamusta" "world" "mundo" "the" "ang" "is" "ay" "a" "isang"
+        "this" "ito" "that" "iyon" "and" "at" "or" "o" "not" "hindi"
+        "I" "ako" "you" "ikaw" "he" "siya" "she" "siya" "we" "tayo"
+        "good" "mabuti" "bad" "masama" "big" "malaki" "small" "maliit"
+        "how" "paano" "what" "ano" "where" "saan" "when" "kailan"
+        "with" "kasama" "from" "mula" "to" "sa" "in" "sa" "on" "sa"}})
 
 (defn- split-sentences
   "Split text into sentences. Simple regex-based sentence splitting."
