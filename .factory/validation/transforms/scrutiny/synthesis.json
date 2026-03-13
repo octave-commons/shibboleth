@@ -1,0 +1,71 @@
+{
+  "milestone": "transforms",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "source .env && export PROXY_AUTH_TOKEN && bash -c 'NVIDIA_BASE=\"$(python3 -c \"import sys,os;print(os.path.join(sys.prefix,\\\"lib\\\",f\\\"python{sys.version_info.major}.{sys.version_info.minor}\\\",\\\"site-packages\\\",\\\"nvidia\\\"))\" 2>/dev/null||true)\" && if [ -d \"${NVIDIA_BASE:-}\" ]; then for d in \"$NVIDIA_BASE\"/*/lib; do [ -d \"$d\" ] && LD_LIBRARY_PATH=\"$d:${LD_LIBRARY_PATH:-}\"; done; export LD_LIBRARY_PATH; fi && clj -M:test'",
+      "exitCode": 0,
+      "details": "277 tests, 2001 assertions, 0 failures, 0 errors"
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "N/A — Clojure is dynamically typed; no typecheck validator per AGENTS.md",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "echo 'No linter configured yet'",
+      "exitCode": 0,
+      "details": "No linter configured in services.yaml"
+    }
+  },
+  "reviewsSummary": {
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Documented chain registry in architecture.md — transform/registry.clj also contains a chains-registry atom for named transform chains defined via def-transform-chain",
+      "sourceFeature": "transform-core"
+    },
+    {
+      "target": "library",
+      "description": "Documented PROXY_AUTH_TOKEN test requirement in environment.md — MT tests require the env var to be set, with instructions for running tests correctly",
+      "sourceFeature": "transform-pipeline-integration"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "skills",
+      "suggestion": "Add to clojure-dsl-worker skill: When gpt-5.2 upstream is unavailable through the proxy, use gemini-2.5-flash as a fallback model for MT tests. The proxy supports multiple models. Document this in the 'Proxy MT Notes' section.",
+      "evidence": "Feature transform-core worker discovered gpt-5.2 was unavailable, had to trial-and-error multiple models before finding gemini-2.5-flash works. Worker skillFeedback confirms this gap.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add convention: Proxy tokens and other secrets should only be read from environment variables via System/getenv or equivalent. Never log, print, or include auth tokens in curl commands during debugging. Use placeholder values in any logged examples.",
+      "evidence": "Feature transform-core transcript showed PROXY_AUTH_TOKEN value in curl debug commands. Not committed to code, but visible in worker transcript.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add convention: Centralize shared utility functions (especially cryptographic operations like SHA-256 hashing) in a dedicated promptbench.util namespace rather than duplicating as private functions across namespaces.",
+      "evidence": "Feature transform-pipeline-integration duplicated SHA-256 hashing in transform_stages.clj, already present in manifest.clj and transform/core.clj. Three independent implementations of the same algorithm across 3 namespaces.",
+      "isSystemic": true
+    },
+    {
+      "target": "skills",
+      "suggestion": "Add to clojure-dsl-worker skill: When implementing pipeline stages that depend on external services (like MT proxy), use mock implementations in integration tests rather than calling the real service. Document the mock pattern: define a local function with the same signature as the real transform impl, and bind it via the transform registry in test setup.",
+      "evidence": "Feature transform-pipeline-integration worker created mock-mt function for pipeline tests, but discovered this pattern themselves without skill guidance. Worker skillFeedback confirms this suggestion.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null
+}

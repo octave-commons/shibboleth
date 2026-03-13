@@ -1,0 +1,50 @@
+{
+  "featureId": "transform-core",
+  "reviewedAt": "2026-03-13T20:15:00.000Z",
+  "commitId": "05fde13966ee6e368814253a5fc7f35e3e9889c7",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Solid implementation of the transform execution engine, all four transform types, chain composition, and variant records. All 8 validation assertions (VAL-XFORM-001 through VAL-XFORM-008) are covered by 39 tests (33 engine + 6 MT). Code follows project conventions: atom-backed registries, seed-deterministic RNG via java.util.Random, SHA-256 hashing, explicit requires, and test isolation via registry reset fixtures. The homoglyph approach using fullwidth Latin characters (U+FF01–FF5E) is a clean solution guaranteeing NFKC reversibility. Chain composition correctly accumulates metadata as ordered vectors and validates step references at definition time. Two non-blocking issues identified.",
+    "issues": [
+      {
+        "file": "test/promptbench/transform_engine_test.clj",
+        "line": 104,
+        "severity": "non_blocking",
+        "description": "codemix-output-validity-test docstring says 'different from input' but does not assert (not= input (:text result)), unlike the exhaustion and homoglyph validity tests which do. The test only checks non-blank. With mix-rate 0.5 this will almost always differ in practice, but the assertion is missing for completeness of VAL-XFORM-001 coverage for code-mix."
+      },
+      {
+        "file": "src/promptbench/transform/core.clj",
+        "line": 160,
+        "severity": "non_blocking",
+        "description": "make-variant-record encodes transform-chain as keywords by joining config key-value pairs with string concatenation (e.g. :exhaustion/position=prefix-repetition-length=50). This encoding is fragile for complex config values (maps, vectors, strings with special characters). Consider storing the chain steps as-is (the original step maps) rather than lossy keyword encoding."
+      },
+      {
+        "file": "test/promptbench/transform_mt_test.clj",
+        "line": 30,
+        "severity": "non_blocking",
+        "description": "MT tests use gemini-2.5-flash instead of gpt-5.2 due to upstream unavailability. This validates the HTTP plumbing and request format but does not exercise the actual default model path. Non-blocking since the implementation correctly defaults to gpt-5.2 and the proxy issue is environmental, not a code defect."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The architecture.md document lists registries for 'families, categories, labels, sources, transforms, metrics' but does not mention the new chains-registry added in this feature (transform/registry.clj). The chain registry follows the same atom-backed pattern with reset! for test isolation, but it's not documented as part of the registry pattern.",
+      "evidence": ".factory/library/architecture.md 'Registry Pattern' section — lists registry types but chain registry not included. src/promptbench/transform/registry.clj:12 adds (defonce ^:private chains-registry (atom {}))."
+    },
+    {
+      "area": "skills",
+      "observation": "The clojure-dsl-worker skill's 'Proxy MT Notes' section documents model 'gpt-5.2' but does not mention fallback behavior when gpt-5.2 upstream is unavailable. Worker had to discover this at runtime and switch to gemini-2.5-flash. Skill feedback confirms: 'The skill could mention that MT tests may need a fallback model when the primary proxy model is unavailable'.",
+      "evidence": ".factory/skills/clojure-dsl-worker/SKILL.md 'Proxy MT Notes' section says 'Model: gpt-5.2' with no fallback guidance. Transcript shows worker testing gpt-5.2, getting 400 errors, then trying multiple models before finding gemini-2.5-flash works. handoff.skillFeedback.suggestedChanges confirms this gap."
+    },
+    {
+      "area": "conventions",
+      "observation": "Worker used PROXY_AUTH_TOKEN env var for proxy authentication (read via System/getenv in mt.clj:23). This pattern is documented in AGENTS.md but the actual token value 'change-me-open-hax-proxy-token' appeared in transcript curl commands. While not committed to code, the token was visible in the worker transcript. Consider noting in AGENTS.md that proxy tokens should only be read from env vars and never logged.",
+      "evidence": "src/promptbench/transform/mt.clj:23 correctly reads from env. Transcript skeleton shows: curl -s http://127.0.0.1:8789/v1/models -H 'Authorization: Bearer change-me-open-hax-proxy-token'"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The transform-core feature passes review. The implementation is thorough: 4 transform types (MT, code-mix, homoglyph, exhaustion), chain composition engine, def-transform-chain macro with step validation, and variant record generation with SHA-256 deterministic IDs. All 8 VAL-XFORM assertions are covered by 39 tests with 0 failures. Three non-blocking issues found: (1) codemix validity test missing explicit 'different from input' assertion, (2) variant record transform-chain encoding is fragile for complex configs, (3) MT tests use fallback model due to gpt-5.2 upstream unavailability. Code quality is good — follows project conventions, uses seed-deterministic RNG, proper error handling with ex-info, and test isolation via registry reset fixtures."
+}

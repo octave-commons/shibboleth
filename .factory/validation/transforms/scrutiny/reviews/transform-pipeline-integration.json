@@ -1,0 +1,56 @@
+{
+  "featureId": "transform-pipeline-integration",
+  "reviewedAt": "2026-03-13T20:30:00.000Z",
+  "commitId": "50114b3",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Solid implementation of Stages 4-6 (tier1-mt, tier2-mt, eval-suites) integrating transforms into the pipeline. The code is well-structured with clear separation between MT variant generation (shared by stages 4 & 5) and eval suite generation (stage 6). All VAL-XFORM-009 assertions are covered: tier-1 generates variants for 10 languages for high-affinity families, tier-2 is properly gated by :tier2 flag, eval-suites default to test-split only, manifests are valid with checksums, and idempotency is verified. Variant records correctly maintain source_id lineage and split inheritance per VAL-XFORM-004. Affinity resolution uses taxonomy/resolve-transforms per VAL-DSL-006. The build! loop in core.clj correctly accumulates variants across stages while preserving canonical records from stages 0-3. 16 tests with 377 assertions provide thorough coverage.",
+    "issues": [
+      {
+        "file": "src/promptbench/pipeline/transform_stages.clj",
+        "line": 34,
+        "severity": "non_blocking",
+        "description": "SHA-256 hashing utilities (sha256-bytes, sha256-string, sha256-file) are duplicated across transform_stages.clj, manifest.clj, and transform/core.clj. These could be extracted to a shared utility namespace to reduce duplication and ensure consistent implementations."
+      },
+      {
+        "file": "src/promptbench/pipeline/transform_stages.clj",
+        "line": 70,
+        "severity": "non_blocking",
+        "description": "resolve-eval-transforms hardcodes the set of eval transforms as {:code-mix {} :homoglyph {} :exhaustion {}} rather than deriving them from the pipeline config's :transforms map. This means affinity resolution always considers all three eval transforms regardless of what the user actually configured. In practice this works because :none affinity excludes transforms anyway, but it couples the stage to a fixed transform set."
+      },
+      {
+        "file": "test/promptbench/transform_pipeline_test.clj",
+        "line": null,
+        "severity": "non_blocking",
+        "description": "Minor test coverage gaps: (1) No idempotency test for tier2-mt (tier1-mt and eval-suites are tested). (2) No test for eval-suites with :scope :all. (3) No negative test for what happens when an unknown scope value is provided (the code defaults to test-only, but this path is untested)."
+      },
+      {
+        "file": "src/promptbench/pipeline/core.clj",
+        "line": 161,
+        "severity": "non_blocking",
+        "description": "The build! function's resume path recovers variants from stored stage data via (or (:variants data) []), but if a pipeline crashes between stages 4 and 5, the accumulated variants from stage 4 are not persisted in the build-state atom (only the stage result is stored). The stage results contain variants, so this works for full restarts, but a mid-run crash could lose in-memory accumulated state. This is an inherent limitation of the atom-based build-state approach and not a bug per se."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Worker duplicated SHA-256 hashing utilities across three namespaces (transform_stages.clj, manifest.clj, transform/core.clj). AGENTS.md says 'SHA-256 for all content hashes' but doesn't mention a shared utility namespace pattern. A convention note about centralizing crypto utilities would prevent further duplication.",
+      "evidence": "src/promptbench/pipeline/transform_stages.clj:34-50 (sha256-bytes, sha256-string, sha256-file), src/promptbench/pipeline/manifest.clj (sha256-file), src/promptbench/transform/core.clj (sha256) — all private, all reimplementing the same algorithm."
+    },
+    {
+      "area": "skills",
+      "observation": "Worker's handoff skillFeedback suggests the skill should mention using mock implementations for transforms requiring external services (like MT proxy) in integration tests. The worker correctly used a mock MT instead of calling the proxy, but discovered this pattern themselves. Adding this to the skill would save future workers the decision-making time.",
+      "evidence": "Handoff skillFeedback.suggestedChanges: 'The skill could mention that mock implementations should be used for transforms that require external services (like MT proxy) in integration tests'. Worker's test file test/promptbench/transform_pipeline_test.clj:30-38 implements mock-mt function."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The pre-existing 4 test failures in transform_mt_test.clj due to missing PROXY_AUTH_TOKEN have been noted by multiple workers now. This is a known environment issue that affects every test run. Documenting this in .factory/library/ (e.g., a known-issues.md) would prevent repeated investigation.",
+      "evidence": "Handoff discoveredIssues: 'Pre-existing: 4 tests in transform_mt_test.clj fail with PROXY_AUTH_TOKEN not set.' Test command exits with code 1 even though all new tests pass."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature passes review. The implementation correctly integrates transform stages 4-6 into the pipeline, covering all VAL-XFORM-009 assertions. Stage 4 generates tier-1 MT variants for 10 languages across high-affinity families, stage 5 is properly gated by the :tier2 flag, and stage 6 applies eval suites to test-split records only by default. Manifests are valid with checksums, stages are idempotent, and variant records maintain source_id lineage and split inheritance. The 16 test cases with 377 assertions provide strong coverage. Issues found are all non-blocking: SHA-256 utility duplication, hardcoded eval transform set in affinity resolution, and minor test coverage gaps (no tier2 idempotency test, no :scope :all test). Code quality is high, follows existing patterns, and the worker followed the skill procedure correctly."
+}

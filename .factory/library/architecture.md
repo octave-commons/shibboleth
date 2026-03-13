@@ -19,6 +19,8 @@ Atom-backed registries with `reset!` for test isolation. One registry per constr
 
 **`reset!` shadowing**: Registry namespaces define their own `reset!` function which shadows `clojure.core/reset!`. Use `(:refer-clojure :exclude [reset!])` in the ns declaration and `clojure.core/reset!` when you need to reset an atom directly. This pattern is established in all three registries: `taxonomy/registry.clj`, `pipeline/sources.clj`, `transform/registry.clj`.
 
+**Chain registry**: `transform/registry.clj` also contains a separate `chains-registry` atom (added during the transforms milestone) that stores named transform chains defined via `def-transform-chain`. It follows the same atom-backed pattern with `reset!` for test isolation. The chain registry is queried via `get-chain` and enumerated via `all-chains`.
+
 **TOCTOU in registration**: All `register-*!` functions have a non-atomic check-then-swap pattern for duplicate detection. Acceptable for single-threaded DSL loading but would need `swap!` with conditional logic for concurrent use.
 
 ## Seed-Mixing in resolve-transforms
