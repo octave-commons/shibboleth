@@ -3,24 +3,9 @@
   "round": 1,
   "status": "pass",
   "validatorsRun": {
-    "test": {
-      "passed": true,
-      "command": "bash -c 'NVIDIA_BASE=\"$(python3 -c \"import sys,os;print(os.path.join(sys.prefix,\\\"lib\\\",f\\\"python{sys.version_info.major}.{sys.version_info.minor}\\\",\\\"site-packages\\\",\\\"nvidia\\\"))\" 2>/dev/null||true)\" && if [ -d \"${NVIDIA_BASE:-}\" ]; then for d in \"$NVIDIA_BASE\"/*/lib; do [ -d \"$d\" ] && LD_LIBRARY_PATH=\"$d:${LD_LIBRARY_PATH:-}\"; done; export LD_LIBRARY_PATH; fi && clj -M:test'",
-      "exitCode": 0,
-      "detail": "222 tests, 1535 assertions, 0 failures, 0 errors"
-    },
-    "typecheck": {
-      "passed": true,
-      "command": "N/A",
-      "exitCode": 0,
-      "detail": "Clojure is dynamically typed — no typecheck validator configured"
-    },
-    "lint": {
-      "passed": true,
-      "command": "echo \"No linter configured yet\"",
-      "exitCode": 0,
-      "detail": "No linter configured yet"
-    }
+    "test": { "passed": true, "command": "clj -M:test (with LD_LIBRARY_PATH for nvidia libs)", "exitCode": 0, "details": "222 tests, 1535 assertions, 0 failures, 0 errors" },
+    "typecheck": { "passed": true, "command": "N/A", "exitCode": 0, "details": "Clojure is dynamically typed — no typecheck validator configured per AGENTS.md" },
+    "lint": { "passed": true, "command": "echo 'No linter configured yet'", "exitCode": 0, "details": "No linter configured per services.yaml" }
   },
   "reviewsSummary": {
     "total": 1,
@@ -29,18 +14,25 @@
     "failedFeatures": []
   },
   "blockingIssues": [],
+  "nonBlockingIssues": [
+    {
+      "featureId": "misc-pipeline-polish",
+      "severity": "non_blocking",
+      "description": "Test file pipeline_polish_test.clj uses clojure.string/split-lines, clojure.string/trim, clojure.string/join (lines 27, 36, 38) without requiring clojure.string in its ns form. This is the same fragile transitive loading pattern that Fix 3 was specifically addressing in production code."
+    }
+  ],
   "appliedUpdates": [],
   "suggestedGuidanceUpdates": [
     {
       "target": "AGENTS.md",
-      "suggestion": "Add coding convention: Never use clojure.core/read-string for data parsing — always use clojure.edn/read-string. The core read-string can execute arbitrary code via #= reader macros, which is a security risk when reading untrusted or file-sourced data.",
-      "evidence": "Feature misc-pipeline-polish fixed a security issue where pipeline/core.clj used clojure.core/read-string to parse canonical-records.edn. A regression test now scans src/ for bare read-string calls, but a documented convention would prevent future workers from introducing new instances.",
-      "isSystemic": false
+      "suggestion": "Add coding convention: Always use clojure.edn/read-string instead of clojure.core/read-string when parsing EDN from files or untrusted sources. clojure.core/read-string can execute arbitrary reader macros, making it a security risk.",
+      "evidence": "Feature misc-pipeline-polish Fix 1 replaced clojure.core/read-string with clojure.edn/read-string in pipeline/core.clj to close a security vulnerability. AGENTS.md Coding Conventions section has no mention of this.",
+      "isSystemic": true
     },
     {
       "target": "AGENTS.md",
-      "suggestion": "Add coding convention: Always use explicit (:require ...) in ns forms — never rely on transitive namespace loading. If a namespace uses functions from clojure.string, clojure.set, etc., it must require them directly.",
-      "evidence": "Feature misc-pipeline-polish fixed verification/core.clj which relied on transitive loading of clojure.string and clojure.set. However, the test file for this fix (pipeline_polish_test.clj) itself uses clojure.string functions without an explicit require, demonstrating the pattern is easy to fall into without a documented convention.",
+      "suggestion": "Add coding convention: Always use explicit :require with aliases in ns forms rather than relying on fully-qualified namespace references (e.g., clojure.string/join) that depend on transitive loading. Transitive loading is fragile and load-order dependent.",
+      "evidence": "Feature misc-pipeline-polish Fix 3 added explicit :require for clojure.string and clojure.set in verification/core.clj. The worker's own test file (pipeline_polish_test.clj) still uses clojure.string without explicit require, showing this pattern recurrs without explicit guidance.",
       "isSystemic": true
     }
   ],
