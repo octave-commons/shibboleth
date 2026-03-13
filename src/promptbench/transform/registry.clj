@@ -9,10 +9,11 @@
   (:require [clojure.spec.alpha :as s]))
 
 ;; ============================================================
-;; Registry Atom
+;; Registry Atoms
 ;; ============================================================
 
 (defonce ^:private transforms-registry (atom {}))
+(defonce ^:private chains-registry (atom {}))
 
 ;; ============================================================
 ;; Specs
@@ -66,11 +67,49 @@
   @transforms-registry)
 
 ;; ============================================================
+;; Chain Registration
+;; ============================================================
+
+(defn register-chain!
+  "Register a transform chain in the chain registry.
+   Validates that all step transform references exist in the transforms registry.
+   Throws on invalid references or duplicate chain name."
+  [chain-name chain-data]
+  (when-not (:description chain-data)
+    (throw (ex-info (str "Chain " chain-name " requires :description")
+                    {:name chain-name})))
+  (when-not (seq (:steps chain-data))
+    (throw (ex-info (str "Chain " chain-name " requires non-empty :steps")
+                    {:name chain-name})))
+  ;; Validate all step transform references
+  (doseq [step (:steps chain-data)]
+    (let [t (:transform step)]
+      (when-not (contains? @transforms-registry t)
+        (throw (ex-info (str "Chain " chain-name " references unregistered transform: " t)
+                        {:name chain-name :transform t})))))
+  (when (contains? @chains-registry chain-name)
+    (throw (ex-info (str "Duplicate chain: " chain-name " is already registered")
+                    {:name chain-name})))
+  (swap! chains-registry assoc chain-name chain-data)
+  chain-data)
+
+(defn get-chain
+  "Retrieve a chain by keyword name."
+  [chain-name]
+  (get @chains-registry chain-name))
+
+(defn all-chains
+  "Return all registered chains as a map of name -> data."
+  []
+  @chains-registry)
+
+;; ============================================================
 ;; Reset (for test isolation)
 ;; ============================================================
 
 (defn reset!
-  "Clear the transforms registry. Used for test isolation."
+  "Clear the transforms and chains registries. Used for test isolation."
   []
   (clojure.core/reset! transforms-registry {})
+  (clojure.core/reset! chains-registry {})
   nil)
