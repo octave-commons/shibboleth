@@ -1,15 +1,21 @@
 (ns promptbench.verification.core
-  "Verification suite runner and parquet schema validation.
+  "Verification suite runner, parquet schema validation, and Stage 7.
 
    Runs all registered verification checks against a dataset.
    Fatal check failures prevent build completion by throwing.
    Non-fatal check failures produce warnings in the result.
 
+   Stage 7 (run-stage7!) combines verification checks with metric
+   assertion evaluation. Metric assertions from registered metrics
+   are evaluated and their pass/fail status is reported.
+
    Also provides parquet schema definition and validation for
    prompts.parquet (12 columns, spec §5.1).
 
-   See spec §6.2 for verification suite design."
+   See spec §6.2 for verification suite design and
+   VAL-METRIC-007 for Stage 7 requirements."
   (:require [promptbench.verification.checks :as checks]
+            [promptbench.metrics.core :as metrics]
             [clojure.string :as str]
             [clojure.set :as set]))
 
@@ -163,3 +169,81 @@
                 :failures (mapv #(select-keys % [:name :detail]) fatal-failures)})))
     {:passed all-passed
      :checks results}))
+
+;; ============================================================
+;; Check Enumeration
+;; ============================================================
+
+(defn all-check-names
+  "Return a vector of all defined verification check names."
+  []
+  (mapv :name verification-checks))
+
+;; ============================================================
+;; Metric Assertion Evaluation
+;; ============================================================
+
+(defn- evaluate-metric-assertions
+  "Evaluate all registered metric assertions against a dataset.
+
+   Computes each registered metric and evaluates its :assertion predicate
+   (if present). Returns a map of metric-name -> result-info.
+
+   dataset — the data to evaluate (map or seq as expected by the metric)
+
+   Returns: {metric-kw {:value result :assertion-passed bool-or-nil} ...}"
+  [dataset]
+  (let [all-metrics (metrics/all-metrics)]
+    (into {}
+          (map (fn [[metric-name metric-data]]
+                 (let [result (try
+                                ((:compute metric-data) dataset {})
+                                (catch Exception e
+                                  {:error (str (.getMessage e))}))
+                       assertion-passed (when (:assertion metric-data)
+                                          (try
+                                            (boolean ((:assertion metric-data) result))
+                                            (catch Exception _e
+                                              false)))]
+                   [metric-name {:value result
+                                 :assertion-passed assertion-passed}])))
+          (sort-by key all-metrics))))
+
+;; ============================================================
+;; Stage 7: Full Verification Suite
+;; ============================================================
+
+(defn run-stage7!
+  "Run Stage 7: full post-build verification suite.
+
+   Combines structural verification checks with metric assertion evaluation.
+   Fatal check failures throw exceptions (blocking the build).
+   Non-fatal failures produce warnings.
+   Metric assertions are evaluated and reported.
+
+   dataset — map with :records and :variants keys
+
+   Returns: {:verification {:passed bool :checks [...]}
+             :metrics {metric-kw {:value ... :assertion-passed bool} ...}
+             :metric-assertions {:total int :passed int :failed int :details [...]}}"
+  [dataset]
+  (let [;; Run structural verification checks
+        verification-result (verify! dataset)
+        ;; Evaluate metric assertions
+        metric-results (evaluate-metric-assertions (:records dataset))
+        ;; Summarize metric assertions
+        metrics-with-assertions (filter (fn [[_k v]] (some? (:assertion-passed v)))
+                                        metric-results)
+        assertion-details (mapv (fn [[metric-name result]]
+                                  {:metric metric-name
+                                   :passed (:assertion-passed result)})
+                                (sort-by key metrics-with-assertions))
+        total-assertions (count assertion-details)
+        passed-assertions (count (filter :passed assertion-details))
+        failed-assertions (- total-assertions passed-assertions)]
+    {:verification verification-result
+     :metrics metric-results
+     :metric-assertions {:total total-assertions
+                         :passed passed-assertions
+                         :failed failed-assertions
+                         :details assertion-details}}))
