@@ -4,7 +4,7 @@
    Atom-backed registries for attack families, harm categories, and intent labels.
    Provides registration, retrieval, and query functions. All registrations are
    validated via clojure.spec before storage."
-  (:refer-clojure :exclude [reset!])
+  (:refer-clojure :exclude [reset! descendants])
   (:require [clojure.spec.alpha :as s]))
 
 ;; ============================================================
@@ -169,6 +169,153 @@
   "Return all registered intent labels as a map of name -> data."
   []
   @intent-labels-registry)
+
+;; ============================================================
+;; Hierarchy Traversal
+;; ============================================================
+
+(defn descendants
+  "Traverse the category hierarchy starting from `category-name` and return
+   all leaf attack families (as a set of keywords).
+
+   The traversal works by:
+   1. Looking up the category in the categories registry
+   2. For each child, checking if it's a category (recurse) or a family (collect)
+   3. If the name is neither a category nor a family, returns empty set
+
+   Returns a set of keyword family names."
+  [category-name]
+  (let [cats @categories-registry
+        fams @families-registry]
+    (if-let [cat (get cats category-name)]
+      ;; It's a category — recurse into children
+      (let [children (:children cat)]
+        (reduce (fn [acc child]
+                  (if (contains? cats child)
+                    ;; Child is a category — recurse
+                    (into acc (descendants child))
+                    ;; Child is a family (or leaf) — collect if registered
+                    (if (contains? fams child)
+                      (conj acc child)
+                      acc)))
+                #{}
+                children))
+      ;; Not a category — check if it's a family (leaf node returns empty)
+      #{})))
+
+(defn families-with-tag
+  "Return the set of family keywords that have the given tag in their :tags set."
+  [tag]
+  (let [fams @families-registry]
+    (into #{}
+          (comp (filter (fn [[_name data]] (contains? (:tags data) tag)))
+                (map first))
+          fams)))
+
+;; ============================================================
+;; Coverage Analysis
+;; ============================================================
+
+(defn coverage-matrix
+  "Build a family × transform coverage matrix from a dataset.
+
+   `dataset` is a sequence of maps with :attack-family and :variant-type keys.
+   `transforms` is a set of transform keywords to include as columns.
+
+   Returns a map: {family-kw {transform-kw count ...} ...}
+   with one entry per registered family, and counts for each transform
+   (zero if no variants exist)."
+  [dataset transforms]
+  (let [fams @families-registry
+        ;; Count occurrences of each (family, transform) pair
+        counts (reduce (fn [acc record]
+                         (let [fam (:attack-family record)
+                               xform (:variant-type record)]
+                           (if (and fam xform)
+                             (update-in acc [fam xform] (fnil inc 0))
+                             acc)))
+                       {}
+                       dataset)
+        ;; Build the zero-filled matrix for all registered families
+        zero-row (zipmap transforms (repeat 0))]
+    (into {}
+          (map (fn [[family-name _]]
+                 [family-name
+                  (merge zero-row (select-keys (get counts family-name {}) transforms))]))
+          fams)))
+
+(defn missing-coverage
+  "Return families that have zero variants of the given transform type in the dataset.
+
+   `dataset` is a sequence of maps with :attack-family and :variant-type keys.
+   `transform` is a keyword for the transform type to check.
+
+   Returns a sequence of family keywords with no coverage for that transform."
+  [dataset transform]
+  (let [fams @families-registry
+        ;; Collect families that have at least one variant of this transform
+        covered (into #{}
+                      (comp (filter #(= transform (:variant-type %)))
+                            (map :attack-family))
+                      dataset)]
+    (into []
+          (remove covered)
+          (keys fams))))
+
+;; ============================================================
+;; Transform Affinity Resolution
+;; ============================================================
+
+(defn resolve-transforms
+  "Given an attack family and a transform config, return the transforms to apply.
+
+   Uses the family's :transforms affinity map to decide inclusion:
+   - :high   — always included
+   - :medium — included probabilistically based on seed (deterministic)
+   - :low    — excluded unless :include-low is true in opts
+   - :none   — never included (default for unlisted transforms)
+
+   Arguments:
+   - `family`           — the family data map (from registry)
+   - `transform-config` — map of transform-keyword -> config-map
+   - `opts`             — options map with:
+     :seed               — integer seed for deterministic medium sampling (required)
+     :include-low        — boolean, include :low affinity (default false)
+     :medium-sample-rate — double, probability for medium inclusion (default 0.5)
+
+   Returns a vector of transform keywords to apply.
+
+   Medium sampling is deterministic: the same seed always produces the same
+   selection. Each transform gets its own deterministic random value derived
+   from the combination of the global seed and the transform name, ensuring
+   independence between transforms."
+  [family transform-config opts]
+  (let [affinities (:transforms family)
+        seed (long (:seed opts 0))
+        include-low (:include-low opts false)
+        medium-rate (:medium-sample-rate opts 0.5)]
+    (into []
+          (filter (fn [t]
+                    (let [a (get-in affinities [t :affinity] :none)]
+                      (case a
+                        :high   true
+                        :medium (let [;; Per-transform deterministic seed: combine global seed
+                                      ;; with transform name hash. Use java.util.Random seeded
+                                      ;; with the combined value for the single coin flip.
+                                      ;; Two-stage seeding: first RNG produces the mixing seed,
+                                      ;; second RNG does the coin flip. This ensures good
+                                      ;; distribution across sequential input seeds.
+                                      t-hash (long (hash (name t)))
+                                      mix-rng (java.util.Random. seed)
+                                      ;; Advance by transform-dependent amount to decorrelate
+                                      _ (dotimes [_ (Math/abs (rem t-hash 7))]
+                                          (.nextLong mix-rng))
+                                      combined-seed (.nextLong mix-rng)
+                                      coin-rng (java.util.Random. (bit-xor combined-seed t-hash))]
+                                  (< (.nextDouble coin-rng) medium-rate))
+                        :low    include-low
+                        :none   false))))
+          (keys transform-config))))
 
 ;; ============================================================
 ;; Reset (for test isolation)
