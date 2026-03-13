@@ -1,0 +1,39 @@
+{
+  "featureId": "misc-pipeline-polish",
+  "reviewedAt": "2026-03-13T15:30:00.000Z",
+  "commitId": "5c6c7cb",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "All three fixes are correctly implemented. (1) SECURITY: pipeline/core.clj now requires clojure.edn and uses edn/read-string at line 196 — the only two read-string calls in src/ are both edn/read-string (core.clj:196 and manifest.clj:67). (2) PERFORMANCE: splitter.clj correctly hoists the noise-groups map computation outside the mapv loop, computing it once as an O(n) operation instead of O(n*m) per-record recomputation. The map logic (map-indexed with sort-by :source-id, synthetic ID formula) is preserved identically. (3) CORRECTNESS: verification/core.clj now explicitly requires clojure.string (as str) and clojure.set (as set), and all 5 call sites are updated to use the aliases. 9 well-structured regression tests cover all three fixes with both source-scanning tests and functional behavioral tests.",
+    "issues": [
+      {
+        "file": "test/promptbench/pipeline_polish_test.clj",
+        "line": 28,
+        "severity": "non_blocking",
+        "description": "Test file uses bare clojure.string/split-lines, clojure.string/trim, and clojure.string/join (lines 28, 37, 40) without an explicit (:require [clojure.string ...]) in its ns form. This is the exact fragile transitive-loading pattern that Fix 3 corrects in production code. It works here because verification/core (which the test requires) now loads clojure.string, but it's inconsistent with the fix's intent. Consider adding [clojure.string :as str] to the test ns :require."
+      },
+      {
+        "file": "test/promptbench/pipeline_polish_test.clj",
+        "line": 18,
+        "severity": "non_blocking",
+        "description": "Source-scanning tests (no-core-read-string-in-src-test, pipeline-core-uses-edn-read-string-test, verification-core-has-explicit-requires-test) depend on the working directory being the project root. This is standard for Clojure projects using cognitect test-runner, but worth noting — these tests will fail if run from a different directory."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "AGENTS.md does not mention the security requirement to use clojure.edn/read-string instead of clojure.core/read-string. Now that this has been identified as a security concern, it should be documented as a coding convention to prevent future regressions (beyond the test that scans for it).",
+      "evidence": "The security fix replaces clojure.core/read-string (which can execute arbitrary code via #= reader macros) with clojure.edn/read-string. AGENTS.md's 'Coding Conventions' section has no mention of read-string safety. A convention like 'Never use clojure.core/read-string for untrusted data — use clojure.edn/read-string' would prevent future regressions."
+    },
+    {
+      "area": "conventions",
+      "observation": "AGENTS.md does not document the convention of always using explicit ns :require rather than relying on transitive namespace loading. Fix 3 addresses this for verification/core.clj, but the test file itself falls back to the fragile pattern. A documented convention would help workers avoid this consistently.",
+      "evidence": "test/promptbench/pipeline_polish_test.clj uses clojure.string/split-lines (line 28), clojure.string/trim (line 37), and clojure.string/join (line 40) without requiring clojure.string in its ns form — the same pattern Fix 3 corrected in src/promptbench/verification/core.clj."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature passes review. All three fixes are correctly implemented: (1) clojure.core/read-string replaced with clojure.edn/read-string in pipeline/core.clj, eliminating reader-macro code execution risk; (2) noise-groups map pre-computed once outside the mapv loop in splitter.clj, reducing O(n²) to O(n); (3) verification/core.clj now explicitly requires clojure.string and clojure.set with idiomatic aliases. Nine regression tests provide good coverage including source-tree scanning, functional correctness, determinism, and disjointness checks. Two non-blocking issues noted: the test file itself uses bare clojure.string calls without an explicit require (ironic given Fix 3), and source-scanning tests are working-directory dependent."
+}

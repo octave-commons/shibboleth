@@ -1,0 +1,49 @@
+{
+  "milestone": "misc-pipeline-fixes",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "bash -c 'NVIDIA_BASE=\"$(python3 -c \"import sys,os;print(os.path.join(sys.prefix,\\\"lib\\\",f\\\"python{sys.version_info.major}.{sys.version_info.minor}\\\",\\\"site-packages\\\",\\\"nvidia\\\"))\" 2>/dev/null||true)\" && if [ -d \"${NVIDIA_BASE:-}\" ]; then for d in \"$NVIDIA_BASE\"/*/lib; do [ -d \"$d\" ] && LD_LIBRARY_PATH=\"$d:${LD_LIBRARY_PATH:-}\"; done; export LD_LIBRARY_PATH; fi && clj -M:test'",
+      "exitCode": 0,
+      "detail": "222 tests, 1535 assertions, 0 failures, 0 errors"
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "N/A",
+      "exitCode": 0,
+      "detail": "Clojure is dynamically typed — no typecheck validator configured"
+    },
+    "lint": {
+      "passed": true,
+      "command": "echo \"No linter configured yet\"",
+      "exitCode": 0,
+      "detail": "No linter configured yet"
+    }
+  },
+  "reviewsSummary": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add coding convention: Never use clojure.core/read-string for data parsing — always use clojure.edn/read-string. The core read-string can execute arbitrary code via #= reader macros, which is a security risk when reading untrusted or file-sourced data.",
+      "evidence": "Feature misc-pipeline-polish fixed a security issue where pipeline/core.clj used clojure.core/read-string to parse canonical-records.edn. A regression test now scans src/ for bare read-string calls, but a documented convention would prevent future workers from introducing new instances.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add coding convention: Always use explicit (:require ...) in ns forms — never rely on transitive namespace loading. If a namespace uses functions from clojure.string, clojure.set, etc., it must require them directly.",
+      "evidence": "Feature misc-pipeline-polish fixed verification/core.clj which relied on transitive loading of clojure.string and clojure.set. However, the test file for this fix (pipeline_polish_test.clj) itself uses clojure.string functions without an explicit require, demonstrating the pattern is easy to fall into without a documented convention.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null
+}
