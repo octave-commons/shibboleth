@@ -1,0 +1,50 @@
+{
+  "featureId": "misc-transforms-polish",
+  "reviewedAt": "2026-03-13T20:45:00.000Z",
+  "commitId": "895d605",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "All 5 scrutiny-discovered issues were properly addressed. (1) SHA-256 centralized to promptbench.util.crypto with 4 public functions (sha256-bytes, sha256-string, sha256-file, sha256-id). All 4 callers updated — transform_stages.clj, manifest.clj, transform/core.clj use direct qualified calls; stages.clj uses def aliases. MessageDigest import confirmed only in crypto.clj. (2) Codemix test now asserts (not= input (:text result)). (3) Transform-chain encoding changed from lossy keyword concatenation to {:transform <kw> :config <map>} data maps. (4) Three new tests added: tier2-mt idempotency, scope :all coverage, unknown scope fallback. (5) resolve-eval-transforms now derives eval transform set from config's :transforms map via dissoc of :tier-1-mt/:tier-2-mt, eliminating the hardcoded {:code-mix {} :homoglyph {} :exhaustion {}}.",
+    "issues": [
+      {
+        "file": "src/promptbench/pipeline/stages.clj",
+        "line": 36,
+        "severity": "non_blocking",
+        "description": "Uses `def ^:private` aliases (sha256-file, sha256-string) to delegate to crypto namespace instead of direct qualified calls (crypto/sha256-file). Works correctly but is less transparent than the approach used in the other 3 files. A minor style inconsistency — not functionally wrong."
+      },
+      {
+        "file": "src/promptbench/util/crypto.clj",
+        "line": 15,
+        "severity": "non_blocking",
+        "description": "sha256-bytes, sha256-string, sha256-file are all public functions. Only sha256-string and sha256-file are used externally (plus sha256-id in core.clj). sha256-bytes could be made private (defn-) since it's only needed as an implementation detail. Minor API surface concern."
+      },
+      {
+        "file": "test/promptbench/transform_pipeline_test.clj",
+        "line": 510,
+        "severity": "non_blocking",
+        "description": "tier2-mt-idempotent-test only checks variant count and variant IDs match between two runs, but doesn't verify the actual variant text content is identical. The ID check implicitly covers this (since variant-id is derived from text), but an explicit text equality check would be stronger."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "AGENTS.md says 'SHA-256 for all content hashes' in Architecture Decisions but does not mention the new centralized promptbench.util.crypto namespace. Future workers implementing new hashing could duplicate SHA-256 code if they don't discover this namespace. AGENTS.md or architecture.md should note that all SHA-256 operations must use promptbench.util.crypto.",
+      "evidence": "AGENTS.md Architecture Decisions section; new file src/promptbench/util/crypto.clj created in this commit"
+    },
+    {
+      "area": "conventions",
+      "observation": "The library/architecture.md documents 'SHA-256 for all content hashes' but doesn't reference the centralized crypto namespace created in this commit. The architecture knowledge should be updated to direct workers to promptbench.util.crypto.",
+      "evidence": ".factory/library/architecture.md — Architecture Decisions section mentions SHA-256 but not the namespace"
+    },
+    {
+      "area": "conventions",
+      "observation": "Worker discovered that stages.clj also had SHA-256 duplication beyond the 3 files mentioned in the feature description (transform_stages.clj, manifest.clj, transform/core.clj). This 4th source was not documented. The worker handled it correctly by also refactoring stages.clj.",
+      "evidence": "Handoff discoveredIssues[0]: 'stages.clj also had SHA-256 duplication (not mentioned in the issue description)'"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "All 5 fixes implemented correctly: SHA-256 centralized to util.crypto (4 callers updated, no duplication remains), codemix test assertion added, transform-chain uses data maps instead of lossy keywords, 3 new tests added (tier2 idempotency, scope :all, unknown scope), eval transforms derived from config. Tests: 280 tests, 2001 assertions, 0 failures (4 pre-existing PROXY_AUTH_TOKEN errors unchanged). Only non-blocking style observations noted."
+}

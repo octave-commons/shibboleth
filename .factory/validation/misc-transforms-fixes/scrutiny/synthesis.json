@@ -1,0 +1,53 @@
+{
+  "milestone": "misc-transforms-fixes",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "source .env && clj -M:test (with LD_LIBRARY_PATH for NVIDIA libs)", "exitCode": 0, "details": "280 tests, 2013 assertions, 0 failures, 0 errors" },
+    "typecheck": { "passed": true, "command": "N/A (Clojure is dynamically typed, no typecheck validator)", "exitCode": 0 },
+    "lint": { "passed": true, "command": "echo 'No linter configured yet'", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Added 'Centralized SHA-256 Hashing' section to architecture.md documenting that all SHA-256 operations must use promptbench.util.crypto namespace (sha256-string, sha256-file, sha256-id). Prevents future workers from duplicating SHA-256 code.",
+      "sourceFeature": "misc-transforms-polish"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add to Architecture Decisions: 'SHA-256 hashing: All SHA-256 operations must use promptbench.util.crypto namespace. Do not create local java.security.MessageDigest instances.'",
+      "evidence": "Feature misc-transforms-polish centralized SHA-256 from 4 duplicated locations into promptbench.util.crypto. Without AGENTS.md guidance, future workers may not discover this namespace and re-introduce duplication.",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add to Testing & Validation: 'MT tests require PROXY_AUTH_TOKEN from .env file. Run tests with `source .env && clj -M:test` or the full command from services.yaml. Without .env, the 4 MT proxy tests will ERROR (not fail).'",
+      "evidence": "Test suite shows 4 errors when PROXY_AUTH_TOKEN is not set (mt-tier1-languages-test, mt-output-validity-test, mt-sends-temperature-zero-and-seed-test, mt-metadata-contains-provenance-test). The services.yaml test command does not source .env, making this a recurring CI/scrutiny trap.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "stages.clj uses def ^:private aliases for crypto functions instead of direct qualified calls",
+      "reason": "Style inconsistency is minor and non-functional. The private aliases work correctly and the pattern is self-documenting. Not worth a fix feature."
+    },
+    {
+      "observation": "sha256-bytes could be made private (defn-) since it's only used internally in crypto.clj",
+      "reason": "API surface concern is minor. Keeping it public doesn't cause harm and may be useful for future consumers. Premature restriction."
+    },
+    {
+      "observation": "tier2-mt-idempotent-test only checks variant count and IDs, not text content",
+      "reason": "variant-id is derived from text content (deterministic hash), so ID equality implicitly guarantees text equality. The test is sufficient."
+    }
+  ],
+  "previousRound": null
+}

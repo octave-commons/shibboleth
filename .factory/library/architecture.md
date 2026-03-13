@@ -50,6 +50,15 @@ These are distinct concerns: validation checks that DSL definitions are internal
 
 This is a meta-check layer above individual registry spec validation.
 
+## Centralized SHA-256 Hashing
+
+All SHA-256 operations MUST use `promptbench.util.crypto`. This namespace provides:
+- `sha256-string` — hash a string, returns hex digest
+- `sha256-file` — hash a file, returns hex digest
+- `sha256-id` — generate deterministic ID from components
+
+Do NOT create local MessageDigest instances. Previously SHA-256 was duplicated across `transform_stages.clj`, `manifest.clj`, `transform/core.clj`, and `stages.clj` — all consolidated in commit `895d605`.
+
 ## Spec Reference
 
 Full DSL design: `/home/err/devel/specs/drafts/guardrail-promptbench-dsl.md`
