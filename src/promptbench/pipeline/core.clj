@@ -15,7 +15,8 @@
   (:refer-clojure :exclude [reset!])
   (:require [promptbench.pipeline.stages :as stages]
             [promptbench.pipeline.manifest :as manifest]
-            [clojure.java.io :as io]))
+            [clojure.java.io :as io]
+            [clojure.edn :as edn]))
 
 ;; ============================================================
 ;; Registry
@@ -192,7 +193,7 @@
                                              (let [canon-file (str (:data-dir config "data")
                                                                    "/canonicalized/canonical-records.edn")]
                                                (when (.exists (io/file canon-file))
-                                                 (read-string (slurp canon-file)))))]
+                                                 (edn/read-string (slurp canon-file)))))]
                              (run-embed-cluster! config records))
 
                            :split

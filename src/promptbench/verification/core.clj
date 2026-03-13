@@ -9,7 +9,9 @@
    prompts.parquet (12 columns, spec §5.1).
 
    See spec §6.2 for verification suite design."
-  (:require [promptbench.verification.checks :as checks]))
+  (:require [promptbench.verification.checks :as checks]
+            [clojure.string :as str]
+            [clojure.set :as set]))
 
 ;; ============================================================
 ;; Parquet Schema Definition (12 columns, spec §5.1)
@@ -46,7 +48,7 @@
    e.g. :source-id -> \"source_id\""
   [k]
   (-> (name k)
-      (clojure.string/replace "-" "_")))
+      (str/replace "-" "_")))
 
 (defn validate-parquet-schema
   "Validate that records conform to the prompts.parquet schema.
@@ -69,8 +71,8 @@
           actual-cols (set (map record-key->col-name (keys sample)))
           ;; Check column count
           col-count-ok? (= (count expected-cols) (count actual-cols))
-          missing-cols (clojure.set/difference expected-cols actual-cols)
-          extra-cols (clojure.set/difference actual-cols expected-cols)
+          missing-cols (set/difference expected-cols actual-cols)
+          extra-cols (set/difference actual-cols expected-cols)
           column-issues (cond-> []
                           (not col-count-ok?)
                           (conj {:issue :wrong-column-count
@@ -90,7 +92,7 @@
                             :let [col-name (:name col-def)
                                   ;; Try both underscore and dash keys
                                   kw-underscore (keyword col-name)
-                                  kw-dash (keyword (clojure.string/replace col-name "_" "-"))
+                                  kw-dash (keyword (str/replace col-name "_" "-"))
                                   val (or (get r kw-underscore) (get r kw-dash))]
                             :when (nil? val)]
                         {:column col-name
@@ -155,7 +157,7 @@
     (when (seq fatal-failures)
       (throw (ex-info
                (str "FATAL verification failure: "
-                    (clojure.string/join ", " (map :name fatal-failures)))
+                    (str/join ", " (map :name fatal-failures)))
                {:fatal true
                 :checks results
                 :failures (mapv #(select-keys % [:name :detail]) fatal-failures)})))

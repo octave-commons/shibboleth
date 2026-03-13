@@ -136,22 +136,24 @@
         cluster-groups (group-by-cluster records)
         ;; Assign clusters to splits
         cluster-assignments (assign-splits cluster-groups target-proportions stratify-dims rng)]
-    ;; Apply split assignments to records
-    (mapv (fn [r]
-            (let [cid (:cluster-id r)]
-              (if (= cid -1)
-                ;; Noise point: find its synthetic cluster id
-                (let [noise-groups (into {}
-                                        (map-indexed
-                                          (fn [idx nr]
-                                            [(:source-id nr) (- -2 idx)])
-                                          (sort-by :source-id
-                                                   (filter #(= -1 (:cluster-id %)) records))))
-                      synthetic-cid (get noise-groups (:source-id r))]
-                  (assoc r :split (get cluster-assignments synthetic-cid)))
-                ;; Regular cluster: look up assignment
-                (assoc r :split (get cluster-assignments cid)))))
-          records)))
+    ;; Pre-compute noise-groups map once (source-id -> synthetic-cluster-id)
+    ;; to avoid O(n^2) re-computation inside the mapv loop
+    (let [noise-groups (into {}
+                            (map-indexed
+                              (fn [idx nr]
+                                [(:source-id nr) (- -2 idx)])
+                              (sort-by :source-id
+                                       (filter #(= -1 (:cluster-id %)) records))))]
+      ;; Apply split assignments to records
+      (mapv (fn [r]
+              (let [cid (:cluster-id r)]
+                (if (= cid -1)
+                  ;; Noise point: look up pre-computed synthetic cluster id
+                  (let [synthetic-cid (get noise-groups (:source-id r))]
+                    (assoc r :split (get cluster-assignments synthetic-cid)))
+                  ;; Regular cluster: look up assignment
+                  (assoc r :split (get cluster-assignments cid)))))
+            records))))
 
 (defn verify-disjointness
   "Verify that no real cluster ID appears in more than one split.
