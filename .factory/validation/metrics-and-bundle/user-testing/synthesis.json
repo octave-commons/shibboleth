@@ -1,0 +1,85 @@
+{
+  "milestone": "metrics-and-bundle",
+  "round": 1,
+  "status": "pass",
+  "note": "No interactive user surface exists for this milestone. Project uses scrutiny-only validation per mission guidance (AGENTS.md: 'Scrutiny only — no user-testing validator (no UI surface)'). All assertions verified through automated test suite (clj -M:test) — the only user surface for this Clojure DSL library. 81 tests (metrics-and-bundle namespaces only), 238 assertions, 0 failures, 0 errors. Full suite: 361 tests, 2239 assertions, 0 failures, 4 errors (all in transform_mt_test due to PROXY_AUTH_TOKEN not set — unrelated to this milestone).",
+  "assertionsSummary": {
+    "total": 8,
+    "passed": 8,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-METRIC-001",
+    "VAL-METRIC-002",
+    "VAL-METRIC-003",
+    "VAL-METRIC-004",
+    "VAL-METRIC-005",
+    "VAL-METRIC-006",
+    "VAL-METRIC-007",
+    "VAL-METRIC-008"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null,
+  "validationMethod": "automated-test-suite",
+  "testSuiteResults": {
+    "command": "clj -M:test --namespace promptbench.metrics-test --namespace promptbench.report-bundle-test --namespace promptbench.cli-test",
+    "testCount": 81,
+    "assertionCount": 238,
+    "failures": 0,
+    "errors": 0,
+    "exitCode": 0
+  },
+  "fullSuiteResults": {
+    "command": "clj -M:test",
+    "testCount": 361,
+    "assertionCount": 2239,
+    "failures": 0,
+    "errors": 4,
+    "errorDetails": "4 errors in transform_mt_test (PROXY_AUTH_TOKEN not set) — from transforms milestone, unrelated to metrics-and-bundle"
+  },
+  "assertionCoverage": {
+    "VAL-METRIC-001": {
+      "method": "test-suite",
+      "evidence": "metrics_test.clj covers def-metric-registers-test, def-metric-stores-all-fields-test, def-metric-missing-description-errors-test, def-metric-missing-compute-errors-test, def-metric-optional-params-test, all-metrics-returns-all-registered-test, compute-metric-invokes-compute-fn-test, compute-metric-assertion-passes-test, compute-metric-assertion-fails-test, reset-clears-registry-test.",
+      "testFiles": ["test/promptbench/metrics_test.clj"]
+    },
+    "VAL-METRIC-002": {
+      "method": "test-suite",
+      "evidence": "metrics_test.clj covers taxonomy-coverage-correct-proportion-test, taxonomy-coverage-all-covered-test, taxonomy-coverage-none-covered-test, taxonomy-coverage-default-min-count-test, transform-coverage-matrix-dimensions-test, transform-coverage-matrix-accurate-counts-test, transform-coverage-matrix-empty-dataset-test, language-coverage-groups-correctly-test, language-coverage-empty-dataset-test, language-coverage-sums-correct-test, plus def-metric integration tests for each coverage metric.",
+      "testFiles": ["test/promptbench/metrics_test.clj"]
+    },
+    "VAL-METRIC-003": {
+      "method": "test-suite",
+      "evidence": "metrics_test.clj covers cluster-leakage-rate-zero-on-valid-test, cluster-leakage-rate-nonzero-on-corrupted-test, cluster-leakage-rate-assertion-predicate-test, cluster-leakage-rate-noise-points-excluded-test, semantic-diversity-per-split-values-test, semantic-diversity-single-item-split-test, semantic-diversity-empty-dataset-test, transform-fidelity-backtranslated-only-test, transform-fidelity-excludes-non-backtranslated-test, transform-fidelity-valid-range-test, transform-fidelity-perfect-backtranslation-test, plus compute-via-registry integration tests.",
+      "testFiles": ["test/promptbench/metrics_test.clj"]
+    },
+    "VAL-METRIC-004": {
+      "method": "test-suite",
+      "evidence": "report_bundle_test.clj covers label-distribution-per-split-test (per-split counts, sum validation), label-distribution-all-labels-present-test, label-distribution-sums-correct-test, language-attack-family-matrix-test (accurate counts per cell), language-attack-family-matrix-complete-dimensions-test.",
+      "testFiles": ["test/promptbench/report_bundle_test.clj"]
+    },
+    "VAL-METRIC-005": {
+      "method": "test-suite",
+      "evidence": "report_bundle_test.clj covers datasheet-has-all-gebru-sections-test (Motivation, Composition, Collection Process, Preprocessing, Uses, Distribution, Maintenance), datasheet-contains-actual-build-values-test (seed, counts, version, license), datasheet-no-placeholder-text-test (no TODO/FIXME/PLACEHOLDER/TBD/INSERT), datasheet-includes-taxonomy-info-test.",
+      "testFiles": ["test/promptbench/report_bundle_test.clj"]
+    },
+    "VAL-METRIC-006": {
+      "method": "test-suite",
+      "evidence": "report_bundle_test.clj covers bundle-contains-all-required-files-test (prompts.parquet, variants.parquet, manifests/, checksums.sha256, verification_report.edn, datasheet.md, build_manifest.edn), bundle-checksums-match-files-test (SHA-256 verification of each file), bundle-build-manifest-has-required-fields-test (dataset-name, version, build-seed, git-commit, stages, total-prompts, total-variants), bundle-verification-report-is-valid-edn-test.",
+      "testFiles": ["test/promptbench/report_bundle_test.clj"]
+    },
+    "VAL-METRIC-007": {
+      "method": "test-suite",
+      "evidence": "report_bundle_test.clj covers stage7-runs-all-checks-test (4 checks all passing), stage7-fatal-failure-blocks-build-test (cluster leak throws FATAL ExceptionInfo), stage7-nonfatal-produces-warnings-test (label skew fails but doesn't throw), stage7-metric-assertions-evaluated-test (cluster-leakage-rate assertion evaluated), stage7-check-enumeration-test (all 4 check names present).",
+      "testFiles": ["test/promptbench/report_bundle_test.clj"]
+    },
+    "VAL-METRIC-008": {
+      "method": "test-suite",
+      "evidence": "cli_test.clj covers build-command-produces-bundle-exit-0-test, build-command-missing-config-exits-2-test, build-command-returns-exit-1-on-failure-test, verify-command-valid-build-exits-0-test, verify-command-invalid-build-exits-nonzero-test, coverage-command-generates-markdown-test (verifies # Coverage Report, ## Taxonomy Coverage, ## Label Distribution, ## Quality Metrics sections), rebuild-command-from-stage-exits-0-test, rebuild-command-preserves-upstream-test, all CLI dispatch tests, v1-config validation tests, seed override test.",
+      "testFiles": ["test/promptbench/cli_test.clj"]
+    }
+  }
+}
