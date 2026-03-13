@@ -1,0 +1,30 @@
+{
+  "groupId": "external-sources",
+  "assertions": ["VAL-MULTI-001", "VAL-MULTI-002", "VAL-MULTI-007"],
+  "testNamespace": "promptbench.external-sources-test",
+  "status": "pass",
+  "results": [
+    {
+      "id": "VAL-MULTI-001",
+      "status": "pass",
+      "evidence": "aya-redteaming-source-registration-test passed: source registered with correct URL (HuggingFace parquet API), format :parquet, license :apache-2.0, field-mapping {prompt→:text, language→:language, harm_category→:harm-category}. fetch-checksums-match-test and fetch-idempotent-test verified fetch behavior."
+    },
+    {
+      "id": "VAL-MULTI-002",
+      "status": "pass",
+      "evidence": "harmbench-source-registration-test passed: URL contains harmbench_behaviors_text_all.csv, format :csv, license :mit, field-mapping {Behavior→:text, Category→:harm-category}, default-language 'en'. advbench-source-registration-test passed: URL contains advbench/harmful_behaviors.csv, format :csv, license :mit, field-mapping {goal→:text}, default-language 'en'. canonicalize-csv-source-test verified CSV records get canonical-lang :en."
+    },
+    {
+      "id": "VAL-MULTI-007",
+      "status": "pass",
+      "evidence": "toxicchat-source-registration-test passed: URL contains 'toxic-chat', format :parquet, license :cc-by-nc-4.0 (non-commercial), field-mapping {user_input→:text}, schema includes :toxicity and :jailbreaking. toxicchat-intent-derivation-test verified: non-toxic/non-jailbreaking→:benign, jailbreaking=1→:adversarial, toxicity=1→:adversarial. CC-BY-NC-4.0 license preserved in all record metadata."
+    }
+  ],
+  "testsRun": 32,
+  "assertionsChecked": 166,
+  "failures": 0,
+  "errors": 0,
+  "toolsUsed": ["clj -M:test --namespace promptbench.external-sources-test"],
+  "frictions": [],
+  "blockers": []
+}

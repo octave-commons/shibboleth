@@ -1,0 +1,25 @@
+{
+  "groupId": "multilingual-pipeline",
+  "assertions": ["VAL-MULTI-003", "VAL-MULTI-006"],
+  "testNamespace": "promptbench.multilingual-pipeline-integration-test",
+  "status": "pass",
+  "results": [
+    {
+      "id": "VAL-MULTI-003",
+      "status": "pass",
+      "evidence": "aya-style-language-labels-preserved-through-canonicalize-test: 8 records created, all 8 languages preserved (en, hi, fr, es, ru, ar, sr, fil). aya-style-canonical-lang-matches-source-language-test: each record's canonical-lang matches source language field. aya-style-language-coverage-shows-all-8-languages-test: language-coverage metric reports all 8 languages. language-labels-preserved-through-split-test: all languages survive through embed+cluster and split stages."
+    },
+    {
+      "id": "VAL-MULTI-006",
+      "status": "pass",
+      "evidence": "multilingual-e2e-all-languages-in-canonical-records-test: en, es, ar, fr, zh all present in canonical records. multilingual-e2e-splits-contain-multilingual-records-test: at least one split contains records in multiple languages. multilingual-e2e-mt-variants-for-non-english-prompts-test: MT variants generated for non-English source prompts with high affinity. multilingual-e2e-language-coverage-metric-test: language-coverage reports all source languages with non-zero counts. multilingual-e2e-full-pipeline-stages-0-through-6-test: all stages fetch through eval-suites complete successfully, >=3 languages survive."
+    }
+  ],
+  "testsRun": 13,
+  "assertionsChecked": 82,
+  "failures": 0,
+  "errors": 0,
+  "toolsUsed": ["clj -M:test --namespace promptbench.multilingual-pipeline-integration-test"],
+  "frictions": [],
+  "blockers": []
+}

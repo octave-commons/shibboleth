@@ -1,0 +1,25 @@
+{
+  "groupId": "tier2-languages",
+  "assertions": ["VAL-MULTI-004", "VAL-MULTI-005"],
+  "testNamespace": "promptbench.tier2-language-test",
+  "status": "pass",
+  "results": [
+    {
+      "id": "VAL-MULTI-004",
+      "status": "pass",
+      "evidence": "lang-names-contains-all-20-languages-test: mt/lang-names has exactly 20 entries. lang-names-contains-all-tier-2-test: all 10 tier-2 languages present (tl, sw, ur, bn, th, vi, id, tr, fa, he). lang-names-tier-2-specific-values-test: all human-readable names correct (Tagalog, Swahili, Urdu, Bengali, Thai, Vietnamese, Indonesian, Turkish, Persian, Hebrew). lang-names-values-are-non-blank-strings-test: all values are non-blank strings."
+    },
+    {
+      "id": "VAL-MULTI-005",
+      "status": "pass",
+      "evidence": "codemix-word-tables-has-5-plus-tier-2-test: >=5 tier-2 languages in word-tables. codemix-word-tables-has-required-tier-2-test: tr, vi, id, sw, tl all present. codemix-word-tables-tier-2-min-5-pairs-test: each has >=5 word pairs. codemix-produces-different-output-for-tier-2-*-test: all 5 tier-2 languages produce different output from input. codemix-tier-2-seed-determinism-test: seed determinism verified for tr and vi. codemix-tier-2-different-langs-produce-different-output-test: Turkish and Vietnamese produce distinct outputs."
+    }
+  ],
+  "testsRun": 32,
+  "assertionsChecked": 166,
+  "failures": 0,
+  "errors": 0,
+  "toolsUsed": ["clj -M:test --namespace promptbench.tier2-language-test"],
+  "frictions": [],
+  "blockers": []
+}

@@ -1,0 +1,35 @@
+{
+  "milestone": "multilingual-corpus",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 7,
+    "passed": 7,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-MULTI-001",
+    "VAL-MULTI-002",
+    "VAL-MULTI-003",
+    "VAL-MULTI-004",
+    "VAL-MULTI-005",
+    "VAL-MULTI-006",
+    "VAL-MULTI-007"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null,
+  "testSummary": {
+    "namespacesRun": [
+      "promptbench.external-sources-test",
+      "promptbench.tier2-language-test",
+      "promptbench.multilingual-pipeline-integration-test"
+    ],
+    "totalTestsRun": 45,
+    "totalAssertionsChecked": 248,
+    "totalFailures": 0,
+    "totalErrors": 0
+  }
+}
