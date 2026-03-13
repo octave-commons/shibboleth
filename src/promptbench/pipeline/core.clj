@@ -9,11 +9,16 @@
 
    Pipeline stages execute in order:
      :fetch -> :canonicalize -> :embed-cluster -> :split
+     -> :tier1-mt -> :tier2-mt -> :eval-suites
+
+   Stages 0-3 produce canonical records with splits.
+   Stages 4-6 generate transform variants from those records.
 
    Pipelines are resumable (skip completed stages), idempotent,
    and seed-controlled for reproducibility."
   (:refer-clojure :exclude [reset!])
   (:require [promptbench.pipeline.stages :as stages]
+            [promptbench.pipeline.transform-stages :as xform-stages]
             [promptbench.pipeline.manifest :as manifest]
             [clojure.java.io :as io]
             [clojure.edn :as edn]))
@@ -64,8 +69,10 @@
 ;; ============================================================
 
 (def ^:private stage-order
-  "Ordered vector of pipeline stages."
-  [:fetch :canonicalize :embed-cluster :split])
+  "Ordered vector of pipeline stages.
+   Stages 0-3: data preparation (fetch, canonicalize, embed+cluster, split).
+   Stages 4-6: transform generation (tier1-mt, tier2-mt, eval-suites)."
+  [:fetch :canonicalize :embed-cluster :split :tier1-mt :tier2-mt :eval-suites])
 
 (defn- stage-index
   "Get the index of a stage in the pipeline order."
@@ -136,6 +143,21 @@
   [config records]
   (stages/split! (assoc config :records records)))
 
+(defn- run-tier1-mt!
+  "Execute the tier-1 MT stage."
+  [config records]
+  (xform-stages/tier1-mt! config records))
+
+(defn- run-tier2-mt!
+  "Execute the tier-2 MT stage."
+  [config records]
+  (xform-stages/tier2-mt! config records))
+
+(defn- run-eval-suites!
+  "Execute the eval suites stage."
+  [config records]
+  (xform-stages/eval-suites! config records))
+
 ;; ============================================================
 ;; Pipeline Orchestration
 ;; ============================================================
@@ -149,7 +171,11 @@
    The pipeline is resumable: completed stages are skipped unless
    their state has been invalidated.
 
-   Returns a build result map with :stages and :data."
+   Stages 0-3 produce canonical records with splits.
+   Stages 4-6 produce transform variants, accumulated across stages.
+
+   Returns a build result map with :stages and :data.
+   :data contains :records (canonical) and :variants (transform-generated)."
   [pipeline-name & {:keys [up-to]}]
   (let [config (get-pipeline pipeline-name)
         _ (when-not config
@@ -162,23 +188,26 @@
         ;; Get existing build state
         existing-state (get-build-state pipeline-name)]
 
-    ;; Execute stages in order
+    ;; Execute stages in order, accumulating records and variants
     (loop [remaining stages-to-run
-           last-records nil]
+           last-records nil
+           all-variants []]
       (if (empty? remaining)
         ;; Done — return build result
         {:stages (reduce-kv (fn [m k v]
                               (assoc m k (select-keys v [:status])))
                             {}
                             (get-in @build-state [pipeline-name :stages] {}))
-         :data {:records last-records}}
+         :data {:records last-records
+                :variants all-variants}}
         (let [stage (first remaining)
               existing (get-in existing-state [:stages stage])]
           (if (and existing (= :complete (:status existing)))
             ;; Stage already complete — skip but recover data
             (let [data (:data existing)
-                  records (or (:records data) last-records)]
-              (recur (rest remaining) records))
+                  records (or (:records data) last-records)
+                  new-variants (or (:variants data) [])]
+              (recur (rest remaining) records (into all-variants new-variants)))
             ;; Execute stage
             (let [result (case stage
                            :fetch
@@ -197,12 +226,26 @@
                              (run-embed-cluster! config records))
 
                            :split
-                           (run-split! config last-records))
+                           (run-split! config last-records)
 
-                  records (:records result)]
+                           :tier1-mt
+                           (run-tier1-mt! config last-records)
+
+                           :tier2-mt
+                           (run-tier2-mt! config last-records)
+
+                           :eval-suites
+                           (run-eval-suites! config last-records))
+
+                  ;; Records only come from stages 0-3; transform stages
+                  ;; don't modify canonical records
+                  records (or (:records result) last-records)
+                  new-variants (or (:variants result) [])]
               ;; Store completion
               (set-stage-complete! pipeline-name stage result)
-              (recur (rest remaining) records))))))))
+              (recur (rest remaining)
+                     records
+                     (into all-variants new-variants)))))))))
 
 (defn rebuild!
   "Rebuild a pipeline from a specific stage onward.
