@@ -71,25 +71,30 @@
    one variant per target language. Records are processed in deterministic
    order (sorted by source-id).
 
-   Arguments:
-   - records   — canonical records with splits
-   - languages — sorted vector of target language keywords
-   - seed      — integer build seed
+    Arguments:
+    - records   — canonical records with splits
+    - languages — sorted vector of target language keywords
+    - seed      — integer build seed
+    - mt-config — tier config map (may include :engine, :proxy-url, :max-tokens)
 
-   Returns a vector of variant records."
-  [records languages seed]
+    Returns a vector of variant records."
+  [records languages seed mt-config]
   (into []
-        (mapcat
-          (fn [record]
-            (if (family-has-high-mt-affinity? (:attack-family record))
-              (mapv
-                (fn [lang]
-                  (let [config {:target-lang lang}
-                        result (transform/execute-transform
-                                 :mt (:canonical-text record) config seed)
-                        source {:source-id (:source-id record)
-                                :text      (:canonical-text record)
-                                :split     (:split record)}]
+         (mapcat
+           (fn [record]
+             (if (family-has-high-mt-affinity? (:attack-family record))
+               (mapv
+                 (fn [lang]
+                   (let [config (cond-> {:target-lang lang}
+                                  (:engine mt-config) (assoc :engine (:engine mt-config))
+                                  (:proxy-url mt-config) (assoc :proxy-url (:proxy-url mt-config))
+                                  (:max-tokens mt-config) (assoc :max-tokens (:max-tokens mt-config))
+                                  (:max_tokens mt-config) (assoc :max_tokens (:max_tokens mt-config)))
+                         result (transform/execute-transform
+                                  :mt (:canonical-text record) config seed)
+                         source {:source-id (:source-id record)
+                                 :text      (:canonical-text record)
+                                 :split     (:split record)}]
                     (transform/make-variant-record
                       source :mt
                       [{:transform :mt :config config}]
@@ -175,7 +180,7 @@
         _             (.mkdirs (io/file variants-dir))
         tier1-config  (or (:tier-1-mt transforms) {})
         languages     (or (:languages tier1-config) tier-1-languages)
-        variants      (generate-mt-variants records languages seed)
+        variants      (generate-mt-variants records languages seed tier1-config)
         ;; Write variants to disk
         variants-file (str variants-dir "/tier1-mt-variants.edn")
         _             (spit variants-file (pr-str variants))
@@ -238,7 +243,7 @@
         tier2-config  (or (:tier-2-mt transforms) {})
         languages     (or (:languages tier2-config) tier-2-languages)
         variants      (if tier2
-                        (generate-mt-variants records languages seed)
+                        (generate-mt-variants records languages seed tier2-config)
                         [])
         ;; Write variants to disk
         variants-file (str variants-dir "/tier2-mt-variants.edn")

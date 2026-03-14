@@ -49,8 +49,26 @@
   (when (contains? @transforms-registry transform-name)
     (throw (ex-info (str "Duplicate transform: " transform-name " is already registered")
                     {:name transform-name})))
-  (swap! transforms-registry assoc transform-name transform-data)
-  transform-data)
+   (swap! transforms-registry assoc transform-name transform-data)
+   transform-data)
+
+(defn set-transform-impl!
+  "Attach (or replace) the :impl function for an already-registered transform.
+
+   Useful for wiring built-in implementations onto definition-only transform
+   specs in production/CLI code.
+
+   Returns the updated transform data."
+  [transform-name impl-fn]
+  (when-not (fn? impl-fn)
+    (throw (ex-info (str "Transform impl must be a function for " transform-name)
+                    {:name transform-name
+                     :impl impl-fn})))
+  (when-not (contains? @transforms-registry transform-name)
+    (throw (ex-info (str "Unknown transform: " transform-name)
+                    {:name transform-name})))
+  (swap! transforms-registry update transform-name assoc :impl impl-fn)
+  (get @transforms-registry transform-name))
 
 ;; ============================================================
 ;; Query Functions

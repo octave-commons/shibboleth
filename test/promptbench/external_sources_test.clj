@@ -1,6 +1,6 @@
 (ns promptbench.external-sources-test
   "Tests for external multilingual dataset source registration and
-   URL-based fetch with CSV and Parquet format support.
+   URL-based fetch with CSV, JSONL, and Parquet format support.
 
    Fulfills: VAL-MULTI-001, VAL-MULTI-002, VAL-MULTI-007"
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
@@ -33,10 +33,11 @@
     (external/register-all!)
     (let [src (sources/get-source :aya-redteaming)]
       (is (some? src) "aya-redteaming should be registered")
-      (is (= "https://huggingface.co/api/datasets/CohereForAI/aya_redteaming/parquet/default/train/0.parquet"
-             (:url src))
-          "URL should point to HuggingFace parquet API")
-      (is (= :parquet (:format src)) "Format should be :parquet")
+      (is (vector? (:urls src)) ":urls should be a vector of URLs")
+      (is (= 8 (count (:urls src))) "Aya should include 8 per-language JSONL files")
+      (is (some #(str/includes? % "aya_eng.jsonl") (:urls src))
+          "Should include the English JSONL part")
+      (is (= :jsonl (:format src)) "Format should be :jsonl")
       (is (= :apache-2.0 (:license src)) "License should be :apache-2.0")
       (is (= {:prompt :text :language :language :harm_category :harm-category}
              (:field-mapping src))

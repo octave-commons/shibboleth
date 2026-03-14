@@ -1,6 +1,11 @@
 # Build artifacts
 data/raw/
 data/build/
+data/canonicalized/
+data/embedded/
+data/manifests/
+data/split/
+data/variants/
 .cpcache/
 target/
 
@@ -22,3 +27,7 @@ Thumbs.db
 __pycache__/
 *.pyc
 classes/
+
+# Local notes / scratch
+docs/notes/
+docs/dev/

@@ -20,6 +20,8 @@
             [clojure.java.io :as io]
             [clojure.java.shell :as shell]
             [clojure.string :as str]
+            [promptbench.corpus.curated :as curated]
+            [promptbench.corpus.external :as external]
             [promptbench.pipeline.core :as pipeline]
             [promptbench.verification.core :as verification]
             [promptbench.report.bundle :as bundle]
@@ -28,7 +30,22 @@
             [promptbench.metrics.coverage :as coverage]
             [promptbench.metrics.quality :as quality]
             [promptbench.pipeline.manifest :as manifest]
-            [promptbench.pipeline.sources :as sources]))
+            [promptbench.pipeline.sources :as sources]
+            [promptbench.transform.builtins :as xforms-builtins]))
+
+(defn- ensure-runtime-registrations!
+  "Ensure required registries are populated for CLI execution.
+
+   The pipeline expects sources, taxonomy, and transforms to be registered
+   before execution. Tests often register selectively; CLI should be usable
+   out-of-the-box.
+
+   Idempotent and safe to call multiple times." 
+  []
+  (external/register-all!)
+  (curated/register-all!)
+  (xforms-builtins/register-all!)
+  nil)
 
 ;; ============================================================
 ;; Config Loading
@@ -398,5 +415,7 @@
   (if (or (empty? args) (some #{"--help" "-h" "help"} args))
     (do (print-help)
         {:exit-code 0})
-    (let [result (cli/dispatch dispatch-table args)]
-      (or result {:exit-code 0}))))
+    (do
+      (ensure-runtime-registrations!)
+      (let [result (cli/dispatch dispatch-table args)]
+        (or result {:exit-code 0})))))

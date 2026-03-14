@@ -4,9 +4,9 @@
    Fulfills: VAL-XFORM-005 (MT proxy integration).
 
    Tests written FIRST per TDD methodology.
-   Note: These tests require the proxy at 127.0.0.1:8789 to be running.
-   Uses gemini-2.5-flash for testing because gpt-5.2 upstream may be intermittently
-   unavailable. The implementation defaults to gpt-5.2 as specified."
+    Note: These tests require the proxy at 127.0.0.1:8789 to be running.
+    Uses glm-5 for testing because it is expected to be available in the
+    open-hax proxy configuration."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [clojure.string :as str]
             [promptbench.transform.core :as core]
@@ -23,8 +23,7 @@
     (f)))
 
 ;; Test model — use one that's reliably available through the proxy.
-;; The implementation defaults to gpt-5.2 for production use.
-(def ^:private test-model "gemini-2.5-flash")
+(def ^:private test-model "glm-5")
 
 ;; ============================================================
 ;; Helper: Register MT transform
@@ -38,7 +37,7 @@
      :deterministic false
      :reversible    :approximate
      :params-spec   {:target-lang {:type :keyword :required true}
-                     :engine {:type :keyword :default :gpt-5.2}}
+                     :engine {:type :keyword :default :glm-5}}
      :provenance    [:engine :target-lang :model-version :timestamp]
      :impl          mt/apply-mt}))
 

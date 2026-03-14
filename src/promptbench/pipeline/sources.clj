@@ -1,11 +1,11 @@
 (ns promptbench.pipeline.sources
-  "def-source macro and source registry.
+   "def-source macro and source registry.
 
-   Registers dataset sources with spec validation. Each source stores:
-   :description, :version, :license (keyword), :format (from #{:parquet :csv :jsonl :edn}),
-   requires either :url or :path, optional :schema and :taxonomy-mapping.
+    Registers dataset sources with spec validation. Each source stores:
+    :description, :version, :license (keyword), :format (from #{:parquet :csv :jsonl :edn}),
+    requires :path, :url, or :urls, optional :schema and :taxonomy-mapping.
 
-   Taxonomy mapping values must be keywords."
+    Taxonomy mapping values must be keywords."
   (:refer-clojure :exclude [reset!])
   (:require [clojure.spec.alpha :as s]))
 
@@ -24,6 +24,7 @@
 (s/def ::license keyword?)
 (s/def ::format #{:parquet :csv :jsonl :edn})
 (s/def ::url (s/nilable string?))
+(s/def ::urls (s/coll-of string? :kind vector? :min-count 1))
 (s/def ::path (s/nilable string?))
 (s/def ::schema map?)
 
@@ -37,20 +38,23 @@
 
 (s/def ::source-data
   (s/keys :req-un [::description ::version ::license ::format]
-          :opt-un [::url ::path ::schema ::taxonomy-mapping]))
+          :opt-un [::url ::urls ::path ::schema ::taxonomy-mapping]))
 
 ;; ============================================================
 ;; Validation Helpers
 ;; ============================================================
 
 (defn- validate-url-or-path!
-  "Ensure that at least one of :url or :path is provided and non-nil."
+  "Ensure that at least one of :url, :urls, or :path is provided and non-nil."
   [source-name source-data]
   (let [url  (:url source-data)
+        urls (:urls source-data)
         path (:path source-data)]
-    (when (and (nil? url) (nil? path))
-      (throw (ex-info (str "Source " source-name " requires either :url or :path")
-                      {:name source-name :url url :path path})))))
+    (when (and (nil? url)
+               (nil? path)
+               (or (nil? urls) (empty? urls)))
+      (throw (ex-info (str "Source " source-name " requires :path, :url, or :urls")
+                      {:name source-name :url url :urls urls :path path})))))
 
 (defn- validate-taxonomy-mapping-values!
   "Ensure all leaf values in :taxonomy-mapping are keywords."

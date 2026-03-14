@@ -229,7 +229,60 @@
       (or (some-> (or (:language row) (get row "language"))
                   str
                   (#(when-not (str/blank? %) %)))
-          default-lang))))
+           default-lang))))
+
+;; ============================================================
+;; Language Normalization
+;; ============================================================
+
+(def ^:private language-aliases
+  "Common language labels mapped to lowercase ISO-639-1-ish codes.
+
+   Used to normalize sources that emit language names (e.g. 'English') or
+   ISO-639-3 codes (e.g. 'eng')."
+  {"en" "en" "eng" "en" "english" "en"
+   "es" "es" "spa" "es" "spanish" "es"
+   "fr" "fr" "fra" "fr" "french" "fr"
+   "hi" "hi" "hin" "hi" "hindi" "hi"
+   "ru" "ru" "rus" "ru" "russian" "ru"
+   "ar" "ar" "arb" "ar" "arabic" "ar"
+   "sr" "sr" "srp" "sr" "serbian" "sr"
+   ;; Tagalog / Filipino
+   "tl" "tl" "tgl" "tl" "fil" "tl" "tagalog" "tl" "filipino" "tl"
+   ;; Other common languages used by the pipeline
+   "de" "de" "deu" "de" "german" "de"
+   "pt" "pt" "por" "pt" "portuguese" "pt"
+   "zh" "zh" "zho" "zh" "chinese" "zh"
+   "ja" "ja" "jpn" "ja" "japanese" "ja"
+   "ko" "ko" "kor" "ko" "korean" "ko"
+   "sw" "sw" "swa" "sw" "swahili" "sw"
+   "ur" "ur" "urd" "ur" "urdu" "ur"
+   "bn" "bn" "ben" "bn" "bengali" "bn"
+   "th" "th" "tha" "th" "thai" "th"
+   "vi" "vi" "vie" "vi" "vietnamese" "vi"
+   "id" "id" "ind" "id" "indonesian" "id"
+   "tr" "tr" "tur" "tr" "turkish" "tr"
+   "fa" "fa" "fas" "fa" "farsi" "fa" "persian" "fa"
+   "he" "he" "heb" "he" "hebrew" "he"})
+
+(defn- normalize-language-code
+  "Normalize a language label into a lowercase code suitable for keywording.
+
+   Examples:
+   - 'English' -> 'en'
+   - 'eng' -> 'en'
+   - 'en-US' -> 'en'
+
+   For unknown inputs, returns the lowercased base token." 
+  [lang]
+  (let [s0 (-> (str (or lang "")) str/trim)
+        s1 (if (str/starts-with? s0 ":") (subs s0 1) s0)
+        s2 (-> s1 (str/replace "_" "-"))
+        base (first (str/split s2 #"-" 2))
+        lower (str/lower-case base)]
+    (or (get language-aliases lower)
+        (when (= 2 (count lower)) lower)
+        lower)))
 
 (defn- extract-harm-category-field
   "Extract the harm category field from a source record using field-mapping.
@@ -330,6 +383,7 @@
    Throws on HTTP errors (non-2xx status)."
   [^String url ^String dest-path]
   (let [resp (http/get url {:as :byte-array
+                            :throw-exceptions false
                             :redirect-strategy :lax
                             :socket-timeout 60000
                             :connection-timeout 30000})]
@@ -340,6 +394,30 @@
     (io/copy (:body resp) (io/file dest-path))
     dest-path))
 
+(defn- download-urls!
+  "Download multiple URLs and concatenate them into a single destination file.
+
+   Intended for JSONL corpora that ship as one file per language.
+   Adds a newline separator between parts to avoid accidental line joining.
+
+   Throws on HTTP errors (non-2xx status)."
+  [urls ^String dest-path]
+  (with-open [out (io/output-stream (io/file dest-path))]
+    (doseq [url urls]
+      (let [resp (http/get url {:as :byte-array
+                                :throw-exceptions false
+                                :redirect-strategy :lax
+                                :socket-timeout 60000
+                                :connection-timeout 30000})]
+        (when-not (<= 200 (:status resp) 299)
+          (throw (ex-info (str "HTTP fetch failed with status " (:status resp)
+                               " for URL: " url)
+                          {:url url :status (:status resp)})))
+        (.write out ^bytes (:body resp))
+        ;; Separator between concatenated parts (safe for JSONL; blank lines ignored by reader).
+        (.write out (byte-array [(byte 10)])))))
+  dest-path)
+
 (defn fetch!
   "Stage 0: Fetch source datasets.
 
@@ -347,8 +425,9 @@
    with a deterministic filename based on the source name.
 
    Supports:
-   - :path sources — copies local files
-   - :url sources  — downloads from HTTP(S) URLs (CSV, Parquet, JSONL)
+    - :path sources — copies local files
+    - :url sources  — downloads from HTTP(S) URLs (CSV, Parquet, JSONL)
+    - :urls sources — downloads multiple URLs and concatenates (e.g. JSONL per language)
 
    Config map keys:
    :sources   — vector of source keywords to fetch
@@ -365,74 +444,100 @@
     :or   {data-dir "data" version "0.1.0"}}]
   (let [raw-dir (str data-dir "/raw")
         manifests-dir (str data-dir "/manifests")
+        manifest-path (str manifests-dir "/fetch-manifest.edn")
         _ (.mkdirs (io/file raw-dir))
         _ (.mkdirs (io/file manifests-dir))
-        files (into {}
-                    (for [source-name (sort sources)]
-                      (let [source-data (sources/get-source source-name)
-                            _ (when-not source-data
-                                (throw (ex-info (str "Source not found: " source-name)
-                                                {:source source-name})))
-                            fmt (name (:format source-data))
-                            dest-filename (str (name source-name) "." fmt)
-                            dest-path (str raw-dir "/" dest-filename)
-                            src-path (:path source-data)
-                            src-url  (:url source-data)]
-                        ;; Fetch: prefer path (local), fallback to URL download
-                        (cond
-                          ;; Local path — copy file
-                          (and src-path (.exists (io/file src-path)))
-                          (io/copy (io/file src-path) (io/file dest-path))
+        expected-config-hash (sha256-string
+                               (pr-str {:sources (sort sources)
+                                        :seed seed
+                                        :version version}))
+        expected-files (into {}
+                             (for [source-name (sort sources)]
+                               (let [source-data (sources/get-source source-name)
+                                     _ (when-not source-data
+                                         (throw (ex-info (str "Source not found: " source-name)
+                                                         {:source source-name})))
+                                     fmt (name (:format source-data))
+                                     dest-filename (str (name source-name) "." fmt)
+                                     dest-path (str raw-dir "/" dest-filename)]
+                                 [source-name dest-path])))
+        cached-manifest (when (.exists (io/file manifest-path))
+                          (manifest/read-manifest manifest-path))]
+    (if (and cached-manifest
+             (= expected-config-hash (:config-hash cached-manifest))
+             (every? (fn [[_ p]] (.exists (io/file p))) expected-files))
+      {:manifest cached-manifest
+       :files expected-files}
+      (let [files (into {}
+                        (for [source-name (sort sources)]
+                          (let [source-data (sources/get-source source-name)
+                                _ (when-not source-data
+                                    (throw (ex-info (str "Source not found: " source-name)
+                                                    {:source source-name})))
+                                fmt (name (:format source-data))
+                                dest-filename (str (name source-name) "." fmt)
+                                dest-path (str raw-dir "/" dest-filename)
+                                src-path (:path source-data)
+                                src-urls (:urls source-data)
+                                src-url  (:url source-data)]
+                            ;; Fetch: prefer path (local), fallback to URL download
+                            (cond
+                              ;; Local path — copy file
+                              (and src-path (.exists (io/file src-path)))
+                              (io/copy (io/file src-path) (io/file dest-path))
 
-                          ;; URL — download from remote
-                          src-url
-                          (do
-                            (binding [*out* *err*]
-                              (println (str "Fetching " (name source-name)
-                                            " from " src-url "...")))
-                            (download-url! src-url dest-path))
+                              ;; URL list — download parts and concatenate
+                              (seq src-urls)
+                              (do
+                                (doseq [[idx url] (map-indexed vector src-urls)]
+                                  (binding [*out* *err*]
+                                    (println (str "Fetching " (name source-name)
+                                                  " (" (inc idx) "/" (count src-urls) ") from " url "..."))))
+                                (download-urls! src-urls dest-path))
 
-                          ;; Local path specified but file doesn't exist
-                          src-path
-                          (throw (ex-info (str "Source file not found: " src-path
-                                               " for source " source-name)
-                                          {:source source-name :path src-path}))
+                              ;; URL — download from remote
+                              src-url
+                              (do
+                                (binding [*out* *err*]
+                                  (println (str "Fetching " (name source-name)
+                                                " from " src-url "...")))
+                                (download-url! src-url dest-path))
 
-                          ;; Neither path nor URL
-                          :else
-                          (throw (ex-info (str "Source " source-name
-                                               " has neither :path nor :url")
-                                          {:source source-name})))
-                        [source-name dest-path])))
-        ;; Compute checksums for all fetched files
-        checksums (into {}
-                        (for [[source-name file-path] (sort-by key files)]
-                          (let [rel-path (str "raw/" (name source-name) "."
-                                              (name (:format (sources/get-source source-name))))]
-                            [rel-path (sha256-file file-path)])))
-        ;; Compute output hash (hash of sorted checksums)
-        output-hash (sha256-string
-                      (pr-str (into (sorted-map) checksums)))
-        ;; Compute config hash
-        config-hash (sha256-string
-                      (pr-str {:sources (sort sources)
-                               :seed seed
-                               :version version}))
-        ;; Create manifest
-        stage-manifest (manifest/create-stage-manifest
-                         {:stage :fetch
-                          :version version
-                          :seed seed
-                          :input-hash config-hash
-                          :output-hash output-hash
-                          :artifact-count (count files)
-                          :config-hash config-hash
-                          :checksums checksums})]
-    ;; Write manifest
-    (manifest/write-manifest! stage-manifest
-                              (str manifests-dir "/fetch-manifest.edn"))
-    {:manifest stage-manifest
-     :files files}))
+                              ;; Local path specified but file doesn't exist
+                              src-path
+                              (throw (ex-info (str "Source file not found: " src-path
+                                                   " for source " source-name)
+                                              {:source source-name :path src-path}))
+
+                              ;; Neither path nor URL
+                              :else
+                              (throw (ex-info (str "Source " source-name
+                                                   " has neither :path, :url, nor :urls")
+                                              {:source source-name})))
+                            [source-name dest-path])))
+            ;; Compute checksums for all fetched files
+            checksums (into {}
+                            (for [[source-name file-path] (sort-by key files)]
+                              (let [rel-path (str "raw/" (name source-name) "."
+                                                  (name (:format (sources/get-source source-name))))]
+                                [rel-path (sha256-file file-path)])))
+            ;; Compute output hash (hash of sorted checksums)
+            output-hash (sha256-string
+                          (pr-str (into (sorted-map) checksums)))
+            ;; Create manifest
+            stage-manifest (manifest/create-stage-manifest
+                             {:stage :fetch
+                              :version version
+                              :seed seed
+                              :input-hash expected-config-hash
+                              :output-hash output-hash
+                              :artifact-count (count files)
+                              :config-hash expected-config-hash
+                              :checksums checksums})]
+        ;; Write manifest
+        (manifest/write-manifest! stage-manifest manifest-path)
+        {:manifest stage-manifest
+         :files files}))))
 
 ;; ============================================================
 ;; Stage 1: Canonicalize
@@ -471,117 +576,130 @@
   (let [raw-dir (str data-dir "/raw")
         canon-dir (str data-dir "/canonicalized")
         manifests-dir (str data-dir "/manifests")
+        canon-file (str canon-dir "/canonical-records.edn")
+        dedup-report-file (str canon-dir "/dedup-report.edn")
+        manifest-path (str manifests-dir "/canonicalize-manifest.edn")
+        expected-config-hash (sha256-string
+                               (pr-str {:sources (sort sources)
+                                        :seed seed
+                                        :version version
+                                        :normalization :nfkc
+                                        :whitespace :collapse
+                                        :hash-algo :sha256}))
         _ (.mkdirs (io/file canon-dir))
         _ (.mkdirs (io/file manifests-dir))
-        ;; Process each source
-        all-records
-        (into []
-              (mapcat
-                (fn [source-name]
-                  (let [source-data (sources/get-source source-name)
-                        _ (when-not source-data
-                            (throw (ex-info (str "Source not found: " source-name)
-                                            {:source source-name})))
-                        fmt (:format source-data)
-                        raw-file (str raw-dir "/" (name source-name) "." (name fmt))
-                        _ (when-not (.exists (io/file raw-file))
-                            (throw (ex-info (str "Raw file not found: " raw-file
-                                                  ". Run fetch! first.")
-                                            {:source source-name :file raw-file})))
-                        rows (read-source-file raw-file fmt)
-                        ;; Check if this is a toxicchat-style source (has toxicity + jailbreaking columns)
-                        has-toxicity-cols? (and (contains? (:schema source-data) :toxicity)
-                                               (contains? (:schema source-data) :jailbreaking))]
-                    (map-indexed
-                      (fn [idx row]
-                        (let [raw-text (extract-text-field row source-data)
-                              lang-str (extract-language-field row source-data)
-                              raw-harm (extract-harm-category-field row source-data)
-                              row-id (or (:row_id row) (get row "row_id") idx)
-                              ;; Normalize text
-                              canon-text (normalize-text (str raw-text))
-                              ;; Compute canonical hash
-                              c-hash (sha256-string canon-text)
-                              ;; Compute source ID
-                              hash-prefix (subs c-hash 0 (min 16 (count c-hash)))
-                              s-id (compute-source-id (name source-name) row-id hash-prefix)
-                              ;; Build a record with the harm category field for taxonomy resolution
-                              record-for-taxonomy (cond-> row
-                                                    raw-harm (assoc :harm_category raw-harm))
-                              ;; Resolve taxonomy labels
-                              taxonomy (resolve-taxonomy record-for-taxonomy source-data)
-                              ;; For ToxicChat-style sources, derive intent from toxicity/jailbreaking
-                              intent-label (if has-toxicity-cols?
-                                             (let [get-int (fn [row k]
-                                                             (let [v (if (contains? row k)
-                                                                       (get row k)
-                                                                       (get row (name k)))]
-                                                               (cond (nil? v) 0
-                                                                     (string? v) (or (parse-long v) 0)
-                                                                     (number? v) (long v)
-                                                                     :else 0)))
-                                                   toxicity     (get-int row :toxicity)
-                                                   jailbreaking (get-int row :jailbreaking)]
-                                               (if (or (= 1 jailbreaking) (= 1 toxicity))
-                                                 :adversarial
-                                                 :benign))
-                                             (:intent-label taxonomy))]
-                          {:source-id      s-id
-                           :canonical-hash c-hash
-                           :canonical-text canon-text
-                           :canonical-lang (keyword lang-str)
-                           :intent-label   intent-label
-                           :attack-family  (:attack-family taxonomy)
-                           :harm-category  (:harm-category taxonomy)
-                           :source         {:dataset source-name
-                                            :row-id  row-id
-                                            :license (:license source-data)}}))
-                      rows))))
-              (sort sources))
-        ;; Deduplicate cross-source records (VAL-CORPUS-006)
-        dedup-result (deduplicate-cross-source all-records)
-        all-records (:records dedup-result)
-        dedup-report {:duplicates (:duplicates dedup-result)
-                      :stats (:stats dedup-result)}
-        ;; Write canonical records as EDN
-        canon-file (str canon-dir "/canonical-records.edn")
-        _ (spit canon-file (pr-str all-records))
-        ;; Write dedup report if any duplicates found
-        _ (when (seq (:duplicates dedup-report))
-            (spit (str canon-dir "/dedup-report.edn") (pr-str dedup-report)))
-        ;; Compute checksums
-        canon-checksum (sha256-file canon-file)
-        checksums {"canonicalized/canonical-records.edn" canon-checksum}
-        ;; Compute hashes
-        ;; Read fetch manifest for input hash chaining
-        fetch-manifest-path (str manifests-dir "/fetch-manifest.edn")
-        input-hash (if (.exists (io/file fetch-manifest-path))
-                     (:output-hash (manifest/read-manifest fetch-manifest-path))
-                     (sha256-string "no-fetch-manifest"))
-        output-hash (sha256-string (pr-str (into (sorted-map) checksums)))
-        config-hash (sha256-string
-                      (pr-str {:sources (sort sources)
-                               :seed seed
-                               :version version
-                               :normalization :nfkc
-                               :whitespace :collapse
-                               :hash-algo :sha256}))
-        ;; Create manifest
-        stage-manifest (manifest/create-stage-manifest
-                         {:stage :canonicalize
-                          :version version
-                          :seed seed
-                          :input-hash input-hash
-                          :output-hash output-hash
-                          :artifact-count (count all-records)
-                          :config-hash config-hash
-                          :checksums checksums})]
-    ;; Write manifest
-    (manifest/write-manifest! stage-manifest
-                              (str manifests-dir "/canonicalize-manifest.edn"))
-    {:manifest stage-manifest
-     :records all-records
-     :dedup-report dedup-report}))
+        cached-manifest (when (.exists (io/file manifest-path))
+                          (manifest/read-manifest manifest-path))]
+    (if (and cached-manifest
+             (= expected-config-hash (:config-hash cached-manifest))
+             (.exists (io/file canon-file)))
+      (let [records (clojure.edn/read-string (slurp canon-file))
+            dedup-report (if (.exists (io/file dedup-report-file))
+                           (clojure.edn/read-string (slurp dedup-report-file))
+                           {:duplicates [] :stats {}})]
+        {:manifest cached-manifest
+         :records records
+         :dedup-report dedup-report})
+      (let [;; Process each source
+            all-records
+            (into []
+                  (mapcat
+                    (fn [source-name]
+                      (let [source-data (sources/get-source source-name)
+                            _ (when-not source-data
+                                (throw (ex-info (str "Source not found: " source-name)
+                                                {:source source-name})))
+                            fmt (:format source-data)
+                            raw-file (str raw-dir "/" (name source-name) "." (name fmt))
+                            _ (when-not (.exists (io/file raw-file))
+                                (throw (ex-info (str "Raw file not found: " raw-file
+                                                      ". Run fetch! first.")
+                                                {:source source-name :file raw-file})))
+                            rows (read-source-file raw-file fmt)
+                            ;; Check if this is a toxicchat-style source (has toxicity + jailbreaking columns)
+                            has-toxicity-cols? (and (contains? (:schema source-data) :toxicity)
+                                                    (contains? (:schema source-data) :jailbreaking))]
+                        (map-indexed
+                          (fn [idx row]
+                            (let [raw-text (extract-text-field row source-data)
+                                  lang-str (extract-language-field row source-data)
+                                  lang-code (normalize-language-code lang-str)
+                                  raw-harm (extract-harm-category-field row source-data)
+                                  row-id (or (:row_id row) (get row "row_id") idx)
+                                  ;; Normalize text
+                                  canon-text (normalize-text (str raw-text))
+                                  ;; Compute canonical hash
+                                  c-hash (sha256-string canon-text)
+                                  ;; Compute source ID
+                                  hash-prefix (subs c-hash 0 (min 16 (count c-hash)))
+                                  s-id (compute-source-id (name source-name) row-id hash-prefix)
+                                  ;; Build a record with the harm category field for taxonomy resolution
+                                  record-for-taxonomy (cond-> row
+                                                       raw-harm (assoc :harm_category raw-harm))
+                                  ;; Resolve taxonomy labels
+                                  taxonomy (resolve-taxonomy record-for-taxonomy source-data)
+                                  ;; For ToxicChat-style sources, derive intent from toxicity/jailbreaking
+                                  intent-label (if has-toxicity-cols?
+                                                 (let [get-int (fn [row k]
+                                                                 (let [v (if (contains? row k)
+                                                                           (get row k)
+                                                                           (get row (name k)))]
+                                                                   (cond (nil? v) 0
+                                                                         (string? v) (or (parse-long v) 0)
+                                                                         (number? v) (long v)
+                                                                         :else 0)))
+                                                       toxicity     (get-int row :toxicity)
+                                                       jailbreaking (get-int row :jailbreaking)]
+                                                   (if (or (= 1 jailbreaking) (= 1 toxicity))
+                                                     :adversarial
+                                                     :benign))
+                                                 (:intent-label taxonomy))]
+                              {:source-id      s-id
+                               :canonical-hash c-hash
+                               :canonical-text canon-text
+                               :canonical-lang (keyword lang-code)
+                               :intent-label   intent-label
+                               :attack-family  (:attack-family taxonomy)
+                               :harm-category  (:harm-category taxonomy)
+                               :source         {:dataset source-name
+                                               :row-id  row-id
+                                               :license (:license source-data)}}))
+                          rows))))
+                  (sort sources))
+            ;; Deduplicate cross-source records (VAL-CORPUS-006)
+            dedup-result (deduplicate-cross-source all-records)
+            all-records (:records dedup-result)
+            dedup-report {:duplicates (:duplicates dedup-result)
+                          :stats (:stats dedup-result)}
+            ;; Write canonical records as EDN
+            _ (spit canon-file (pr-str all-records))
+            ;; Write dedup report if any duplicates found
+            _ (when (seq (:duplicates dedup-report))
+                (spit dedup-report-file (pr-str dedup-report)))
+            ;; Compute checksums
+            canon-checksum (sha256-file canon-file)
+            checksums {"canonicalized/canonical-records.edn" canon-checksum}
+            ;; Read fetch manifest for input hash chaining
+            fetch-manifest-path (str manifests-dir "/fetch-manifest.edn")
+            input-hash (if (.exists (io/file fetch-manifest-path))
+                         (:output-hash (manifest/read-manifest fetch-manifest-path))
+                         (sha256-string "no-fetch-manifest"))
+            output-hash (sha256-string (pr-str (into (sorted-map) checksums)))
+            ;; Create manifest
+            stage-manifest (manifest/create-stage-manifest
+                             {:stage :canonicalize
+                              :version version
+                              :seed seed
+                              :input-hash input-hash
+                              :output-hash output-hash
+                              :artifact-count (count all-records)
+                              :config-hash expected-config-hash
+                              :checksums checksums})]
+        ;; Write manifest
+        (manifest/write-manifest! stage-manifest manifest-path)
+        {:manifest stage-manifest
+         :records all-records
+         :dedup-report dedup-report}))))
 
 ;; ============================================================
 ;; Stage 2: Embed + Cluster
@@ -613,59 +731,75 @@
     :or   {data-dir "data" version "0.1.0"}}]
   (let [manifests-dir (str data-dir "/manifests")
         embedded-dir (str data-dir "/embedded")
+        manifest-path (str manifests-dir "/embed-cluster-manifest.edn")
+        cluster-file (str embedded-dir "/cluster-assignments.edn")
         _ (.mkdirs (io/file manifests-dir))
         _ (.mkdirs (io/file embedded-dir))
-        ;; Extract texts for embedding (use canonical-text)
-        texts (mapv :canonical-text records)
         model-name (or (:model embedding) "intfloat/multilingual-e5-large")
         batch-size (or (:batch-size embedding) 256)
-        ;; Embed all texts
-        embeddings (embed/embed-batch texts model-name :batch-size batch-size)
-        ;; Cluster embeddings
         min-cluster-size (or (:min-cluster-size clustering) 5)
         metric (or (:metric clustering) "cosine")
-        labels (cluster/cluster-embeddings embeddings
-                 :min-cluster-size min-cluster-size
-                 :metric metric)
-        ;; Attach embeddings and cluster-ids to records
-        enriched-records (mapv (fn [record emb label]
-                                 (assoc record
-                                        :embedding (vec emb)
-                                        :cluster-id (long label)))
-                               records embeddings labels)
-        ;; Write enriched records as EDN (without embeddings for size)
-        cluster-file (str embedded-dir "/cluster-assignments.edn")
-        cluster-data (mapv #(select-keys % [:source-id :cluster-id]) enriched-records)
-        _ (spit cluster-file (pr-str cluster-data))
-        ;; Compute checksums and manifest
-        cluster-checksum (sha256-file cluster-file)
-        checksums {"embedded/cluster-assignments.edn" cluster-checksum}
-        ;; Chain input hash from canonicalize manifest
-        canon-manifest-path (str manifests-dir "/canonicalize-manifest.edn")
-        input-hash (if (.exists (io/file canon-manifest-path))
-                     (:output-hash (manifest/read-manifest canon-manifest-path))
-                     (sha256-string "no-canonicalize-manifest"))
-        output-hash (sha256-string (pr-str (into (sorted-map) checksums)))
-        config-hash (sha256-string
-                      (pr-str {:embedding {:model model-name
-                                           :batch-size batch-size}
-                               :clustering {:min-cluster-size min-cluster-size
-                                            :metric metric}
-                               :seed seed
-                               :version version}))
-        stage-manifest (manifest/create-stage-manifest
-                         {:stage :embed-cluster
-                          :version version
-                          :seed seed
-                          :input-hash input-hash
-                          :output-hash output-hash
-                          :artifact-count (count enriched-records)
-                          :config-hash config-hash
-                          :checksums checksums})]
-    (manifest/write-manifest! stage-manifest
-                              (str manifests-dir "/embed-cluster-manifest.edn"))
-    {:manifest stage-manifest
-     :records enriched-records}))
+        expected-config-hash (sha256-string
+                               (pr-str {:embedding {:model model-name
+                                                    :batch-size batch-size}
+                                        :clustering {:min-cluster-size min-cluster-size
+                                                     :metric metric}
+                                        :seed seed
+                                        :version version}))
+        cached-manifest (when (.exists (io/file manifest-path))
+                          (manifest/read-manifest manifest-path))]
+    (if (and cached-manifest
+             (= expected-config-hash (:config-hash cached-manifest))
+             (.exists (io/file cluster-file)))
+      (let [cluster-data (clojure.edn/read-string (slurp cluster-file))
+            cid-by-sid (into {}
+                             (map (fn [{:keys [source-id cluster-id]}]
+                                    [source-id cluster-id]))
+                             cluster-data)
+            enriched-records (mapv (fn [record]
+                                     (assoc record :cluster-id
+                                            (long (get cid-by-sid (:source-id record) -1))))
+                                   records)]
+        {:manifest cached-manifest
+         :records enriched-records})
+      (let [;; Extract texts for embedding (use canonical-text)
+            texts (mapv :canonical-text records)
+            ;; Embed all texts
+            embeddings (embed/embed-batch texts model-name :batch-size batch-size)
+            ;; Cluster embeddings
+            labels (cluster/cluster-embeddings embeddings
+                     :min-cluster-size min-cluster-size
+                     :metric metric)
+            ;; Attach embeddings and cluster-ids to records
+            enriched-records (mapv (fn [record emb label]
+                                     (assoc record
+                                            :embedding (vec emb)
+                                            :cluster-id (long label)))
+                                   records embeddings labels)
+            ;; Write enriched records as EDN (without embeddings for size)
+            cluster-data (mapv #(select-keys % [:source-id :cluster-id]) enriched-records)
+            _ (spit cluster-file (pr-str cluster-data))
+            ;; Compute checksums and manifest
+            cluster-checksum (sha256-file cluster-file)
+            checksums {"embedded/cluster-assignments.edn" cluster-checksum}
+            ;; Chain input hash from canonicalize manifest
+            canon-manifest-path (str manifests-dir "/canonicalize-manifest.edn")
+            input-hash (if (.exists (io/file canon-manifest-path))
+                         (:output-hash (manifest/read-manifest canon-manifest-path))
+                         (sha256-string "no-canonicalize-manifest"))
+            output-hash (sha256-string (pr-str (into (sorted-map) checksums)))
+            stage-manifest (manifest/create-stage-manifest
+                             {:stage :embed-cluster
+                              :version version
+                              :seed seed
+                              :input-hash input-hash
+                              :output-hash output-hash
+                              :artifact-count (count enriched-records)
+                              :config-hash expected-config-hash
+                              :checksums checksums})]
+        (manifest/write-manifest! stage-manifest manifest-path)
+        {:manifest stage-manifest
+         :records enriched-records}))))
 
 ;; ============================================================
 ;; Stage 3: Split
@@ -695,44 +829,63 @@
     :or   {data-dir "data" version "0.1.0"}}]
   (let [manifests-dir (str data-dir "/manifests")
         split-dir (str data-dir "/split")
+        manifest-path (str manifests-dir "/split-manifest.edn")
+        split-file (str split-dir "/split-assignments.edn")
         _ (.mkdirs (io/file manifests-dir))
         _ (.mkdirs (io/file split-dir))
         ;; Perform cluster-disjoint split
         split-config (or split {:train 0.70 :dev 0.15 :test 0.15
                                 :stratify-by [:intent-label :attack-family :canonical-lang]
                                 :constraint :cluster-disjoint})
-        split-records (splitter/split-clusters records split-config seed)
-        ;; Verify disjointness invariant
-        disjointness (splitter/verify-disjointness split-records)
-        _ (when-not (:passed disjointness)
-            (throw (ex-info "FATAL: cluster leakage detected — this is a bug in the splitter"
-                            {:leaks (:leaks disjointness)})))
-        ;; Write split assignments as EDN
-        split-file (str split-dir "/split-assignments.edn")
-        split-data (mapv #(select-keys % [:source-id :cluster-id :split]) split-records)
-        _ (spit split-file (pr-str split-data))
-        ;; Checksums and manifest
-        split-checksum (sha256-file split-file)
-        checksums {"split/split-assignments.edn" split-checksum}
-        embed-manifest-path (str manifests-dir "/embed-cluster-manifest.edn")
-        input-hash (if (.exists (io/file embed-manifest-path))
-                     (:output-hash (manifest/read-manifest embed-manifest-path))
-                     (sha256-string "no-embed-cluster-manifest"))
-        output-hash (sha256-string (pr-str (into (sorted-map) checksums)))
-        config-hash (sha256-string
-                      (pr-str {:split split-config
-                               :seed seed
-                               :version version}))
-        stage-manifest (manifest/create-stage-manifest
-                         {:stage :split
-                          :version version
-                          :seed seed
-                          :input-hash input-hash
-                          :output-hash output-hash
-                          :artifact-count (count split-records)
-                          :config-hash config-hash
-                          :checksums checksums})]
-    (manifest/write-manifest! stage-manifest
-                              (str manifests-dir "/split-manifest.edn"))
-    {:manifest stage-manifest
-     :records split-records}))
+        expected-config-hash (sha256-string
+                               (pr-str {:split split-config
+                                        :seed seed
+                                        :version version}))
+        cached-manifest (when (.exists (io/file manifest-path))
+                          (manifest/read-manifest manifest-path))]
+    (if (and cached-manifest
+             (= expected-config-hash (:config-hash cached-manifest))
+             (.exists (io/file split-file)))
+      (let [split-data (clojure.edn/read-string (slurp split-file))
+            split-by-sid (into {}
+                               (map (fn [{:keys [source-id split cluster-id]}]
+                                      [source-id {:split split :cluster-id cluster-id}]))
+                               split-data)
+            split-records (mapv (fn [record]
+                                  (if-let [{:keys [split cluster-id]} (get split-by-sid (:source-id record))]
+                                    (cond-> record
+                                      split (assoc :split split)
+                                      (some? cluster-id) (assoc :cluster-id (long cluster-id)))
+                                    record))
+                                records)]
+        {:manifest cached-manifest
+         :records split-records})
+      (let [split-records (splitter/split-clusters records split-config seed)
+            ;; Verify disjointness invariant
+            disjointness (splitter/verify-disjointness split-records)
+            _ (when-not (:passed disjointness)
+                (throw (ex-info "FATAL: cluster leakage detected — this is a bug in the splitter"
+                                {:leaks (:leaks disjointness)})))
+            ;; Write split assignments as EDN
+            split-data (mapv #(select-keys % [:source-id :cluster-id :split]) split-records)
+            _ (spit split-file (pr-str split-data))
+            ;; Checksums and manifest
+            split-checksum (sha256-file split-file)
+            checksums {"split/split-assignments.edn" split-checksum}
+            embed-manifest-path (str manifests-dir "/embed-cluster-manifest.edn")
+            input-hash (if (.exists (io/file embed-manifest-path))
+                         (:output-hash (manifest/read-manifest embed-manifest-path))
+                         (sha256-string "no-embed-cluster-manifest"))
+            output-hash (sha256-string (pr-str (into (sorted-map) checksums)))
+            stage-manifest (manifest/create-stage-manifest
+                             {:stage :split
+                              :version version
+                              :seed seed
+                              :input-hash input-hash
+                              :output-hash output-hash
+                              :artifact-count (count split-records)
+                              :config-hash expected-config-hash
+                              :checksums checksums})]
+        (manifest/write-manifest! stage-manifest manifest-path)
+        {:manifest stage-manifest
+         :records split-records}))))

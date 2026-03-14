@@ -280,7 +280,7 @@
     (verify  "clj -M:run verify --config pipelines/v1.edn")
     (coverage "clj -M:run coverage --config pipelines/v1.edn")
     (rebuild "clj -M:run rebuild --config pipelines/v1.edn --from canonicalize")
-    (test    "clj -M:test"))
+    (test    "./run-tests.sh  # sets LD_LIBRARY_PATH for CUDA and PROXY_AUTH_TOKEN"))
 
   ;; ============================================================
   ;; 10. חֻקּוֹת — The Conventions

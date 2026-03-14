@@ -15,17 +15,22 @@
    Note: For cosine metric, algorithm='generic' is used since BallTree
    doesn't support cosine distance in scikit-learn."
   [embeddings & {:keys [min-cluster-size metric]
-                 :or   {min-cluster-size 5 metric "cosine"}}]
+                  :or   {min-cluster-size 5 metric "cosine"}}]
   (embed/ensure-python!)
-  (let [np         (py/import-module "numpy")
+  (let [metric-str (cond
+                     (keyword? metric) (name metric)
+                     (string? metric) metric
+                     (nil? metric) "cosine"
+                     :else (str metric))
+        np         (py/import-module "numpy")
         hdb-mod    (py/import-module "hdbscan")
         emb-np     (py/call-attr-kw np "array" [(py/->python embeddings)] {:dtype "float64"})
         ;; Use 'generic' algorithm for cosine metric (BallTree doesn't support it)
-        algo       (if (= metric "cosine") "generic" "best")
+        algo       (if (= metric-str "cosine") "generic" "best")
         clusterer  (py/call-attr-kw hdb-mod "HDBSCAN"
                      []
                      {:min_cluster_size min-cluster-size
-                      :metric           metric
+                      :metric           metric-str
                       :algorithm        algo})
         labels-np  (py/call-attr clusterer "fit_predict" emb-np)
         labels-list (py/call-attr labels-np "tolist")]

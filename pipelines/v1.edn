@@ -38,13 +38,15 @@
          :constraint  :cluster-disjoint}
 
  ;; Stage 4-5: Transforms
- :transforms
- {:tier-1-mt   {:languages     [:es :fr :zh :ar :ja :hi :ru :pt :de :ko]
-                :engine        :gpt-5.2
-                :backtranslate true}
-  :tier-2-mt   {:languages [:tl :sw :ur :bn :th :vi :id :tr :fa :he]
-                :engine    :gpt-5.2
-                :gated     true}
+  :transforms
+  {:tier-1-mt   {:languages     [:es :fr :zh :ar :ja :hi :ru :pt :de :ko]
+                 :engine        :glm-5
+                 :max-tokens    1024
+                 :backtranslate true}
+   :tier-2-mt   {:languages [:tl :sw :ur :bn :th :vi :id :tr :fa :he]
+                 :engine    :glm-5
+                 :max-tokens 1024
+                 :gated     true}
   :code-mix    {:rates      [0.1 0.25 0.5]
                 :strategies [:inter-sentential :intra-sentential]
                 :pairings   :auto}

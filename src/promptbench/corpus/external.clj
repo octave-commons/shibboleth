@@ -2,7 +2,7 @@
   "External multilingual dataset source registrations.
 
    Registers four external adversarial prompt datasets:
-   1. aya-redteaming  — HuggingFace Parquet, Apache-2.0, 8 languages
+   1. aya-redteaming  — HuggingFace dataset repo JSONL, Apache-2.0, 8 languages
    2. harmbench       — GitHub CSV, MIT, English-only
    3. advbench        — GitHub CSV, MIT, English-only
    4. toxicchat       — HuggingFace Parquet, CC-BY-NC-4.0, mostly English
@@ -28,15 +28,22 @@
      (:text, :language, :harm-category)"
   []
   ;; --- aya-redteaming ---
-  ;; Multilingual adversarial prompts from CohereForAI.
-  ;; 7419 prompts across 8 languages (en, hi, fr, es, ru, ar, sr, fil).
-  ;; Parquet format from HuggingFace API.
+  ;; Multilingual adversarial prompts from Cohere.
+  ;; 7419 prompts across 8 languages (en, hi, fr, es, ru, ar, sr, tl).
+  ;; Dataset viewer can be disabled; fetch from repo JSONL files and concatenate.
   (sources/register-source! :aya-redteaming
     {:description      "Aya Red Team dataset — multilingual adversarial prompts from CohereForAI"
-     :url              "https://huggingface.co/api/datasets/CohereForAI/aya_redteaming/parquet/default/train/0.parquet"
+     :urls             ["https://huggingface.co/datasets/CohereLabs/aya_redteaming/resolve/main/aya_arb.jsonl"
+                        "https://huggingface.co/datasets/CohereLabs/aya_redteaming/resolve/main/aya_eng.jsonl"
+                        "https://huggingface.co/datasets/CohereLabs/aya_redteaming/resolve/main/aya_fra.jsonl"
+                        "https://huggingface.co/datasets/CohereLabs/aya_redteaming/resolve/main/aya_hin.jsonl"
+                        "https://huggingface.co/datasets/CohereLabs/aya_redteaming/resolve/main/aya_rus.jsonl"
+                        "https://huggingface.co/datasets/CohereLabs/aya_redteaming/resolve/main/aya_spa.jsonl"
+                        "https://huggingface.co/datasets/CohereLabs/aya_redteaming/resolve/main/aya_srp.jsonl"
+                        "https://huggingface.co/datasets/CohereLabs/aya_redteaming/resolve/main/aya_tgl.jsonl"]
      :version          "1.0.0"
      :license          :apache-2.0
-     :format           :parquet
+     :format           :jsonl
      :schema           {:prompt :string :language :string :harm_category :string}
      :field-mapping    {:prompt        :text
                         :language      :language
