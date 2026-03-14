@@ -6,6 +6,7 @@ data/embedded/
 data/manifests/
 data/split/
 data/variants/
+data/runs/
 .cpcache/
 target/
 

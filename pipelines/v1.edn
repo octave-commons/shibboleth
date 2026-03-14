@@ -12,6 +12,9 @@
  :version "0.1.0"
  :seed    1337
 
+ ;; Enable Tier-2 MT generation (Stage 5)
+ :tier2   true
+
  ;; Stage 0: Fetch
  :sources [:aya-redteaming :harmbench :advbench :toxicchat
            :curated-persona-injections :curated-authority-escalation
