@@ -76,14 +76,47 @@
 ;; Translation via proxy
 ;; ============================================================
 
+(defn- strip-code-fences
+  "Remove common markdown code fences from a model output string." 
+  [s]
+  (let [t (str/trim (or s ""))]
+    (cond
+      (and (str/starts-with? t "```")
+           (str/includes? t "```"))
+      (let [;; Drop first fence line, drop trailing fence
+            lines (->> (str/split-lines t)
+                       (drop 1)
+                       (remove #(= "```" (str/trim %))))]
+        (str/trim (str/join "\n" lines)))
+
+      :else t)))
+
+(defn- extract-json-array-substring
+  "Extract the substring between the first '[' and the last ']'.
+
+   Useful when providers wrap JSON with extra text. If we cannot find
+   both delimiters, returns the original string." 
+  [s]
+  (let [t (str/trim (or s ""))
+        start (.indexOf t "[")
+        end   (.lastIndexOf t "]")]
+    (if (and (>= start 0) (>= end 0) (> end start))
+      (subs t start (inc end))
+      t)))
+
 (defn- parse-json-array
   "Parse a JSON array from model output.
 
-   The proxy sometimes returns leading/trailing whitespace; we trim.
-   We *intentionally* do not attempt to recover from non-JSON outputs here,
-   because silent recovery corrupts provenance." 
+   Hard failures:
+   - malformed JSON
+   - not an array
+
+   Soft normalization (does not change semantics):
+   - strip markdown code fences
+   - trim
+   - extract JSON-array substring if extra prefix/suffix text exists" 
   [s]
-  (let [t (str/trim (or s ""))]
+  (let [t (-> s strip-code-fences extract-json-array-substring str/trim)]
     (try
       (let [v (json/parse-string t true)]
         (when-not (sequential? v)

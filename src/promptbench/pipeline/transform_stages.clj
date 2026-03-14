@@ -139,51 +139,99 @@
                   (sort languages)))
               eligible-records))
       ;; --- batched: one request per (batch, lang) ---
-      (let [;; Lazy require to avoid circular deps in tests
-            mt-ns (requiring-resolve 'promptbench.transform.mt/translate-batch-via-proxy)
-            chunks (partition-all batch-size eligible-records)]
+      (let [mt-batch! (requiring-resolve 'promptbench.transform.mt/translate-batch-via-proxy)
+            chunks    (partition-all batch-size eligible-records)
+            max-toks  (long (or (:max-tokens mt-config)
+                                (:max_tokens mt-config)
+                                8192))
+            approx-tokens (fn [texts]
+                            (let [n (reduce + 0 (map (comp count #(or % "")) texts))
+                                  approx (long (Math/ceil (/ (double n) 4.0)))]
+                              (+ approx 512)))
+            proxy-opts (cond-> []
+                         (:proxy-url mt-config) (conj :proxy-url (:proxy-url mt-config))
+                         (:engine mt-config)    (conj :model (name (:engine mt-config)))
+                         (:max-tokens mt-config) (conj :max-tokens (:max-tokens mt-config))
+                         (:max_tokens mt-config) (conj :max-tokens (:max_tokens mt-config)))]
         (into []
               (mapcat
                 (fn [lang]
-                  (let [config (mt-config->xform-config mt-config lang)
-                        proxy-opts (cond-> []
-                                     (:proxy-url mt-config) (conj :proxy-url (:proxy-url mt-config))
-                                     (:engine mt-config) (conj :model (name (:engine mt-config)))
-                                     (:max-tokens mt-config) (conj :max-tokens (:max-tokens mt-config))
-                                     (:max_tokens mt-config) (conj :max-tokens (:max_tokens mt-config)))
-                        ;; For each chunk, call batch translate, then emit per-record variant maps.
-                        per-lang-variants
-                        (mapcat
-                          (fn [batch]
-                            (let [in-texts   (mapv :canonical-text batch)
-                                  resp       (apply mt-ns (concat [in-texts lang seed] proxy-opts))
-                                  out-texts  (:texts resp)
-                                  batch-meta (:metadata resp)]
-                              (when-not (= (count out-texts) (count batch))
-                                (throw (ex-info "MT batch translation returned wrong length"
-                                                {:type :proxy-error
-                                                 :expected (count batch)
-                                                 :actual (count out-texts)
-                                                 :target-lang lang})))
-                              (mapv
-                                (fn [record out-text]
-                                  (let [source {:source-id (:source-id record)
-                                                :text      (:canonical-text record)
-                                                :split     (:split record)}]
-                                    (-> (transform/make-variant-record
-                                          source :mt
-                                          [{:transform :mt :config config}]
-                                          seed
-                                          out-text
-                                          [(or batch-meta {})])
-                                        (assoc :attack-family (:attack-family record)
-                                               :canonical-lang (:canonical-lang record)
-                                               :language lang))))
-                                batch
-                                out-texts)))
-                          chunks)]
-                    per-lang-variants)))
-                (sort languages))))))
+                  (let [config (mt-config->xform-config mt-config lang)]
+                    (letfn [(merge-outs [a b]
+                              {:texts (into (:texts a) (:texts b))
+                               :metas (into (:metas a) (:metas b))})
+
+                            (single-out [record]
+                              (let [res (transform/execute-transform :mt (:canonical-text record) config seed)]
+                                {:texts [(:text res)]
+                                 :metas [(:metadata res)]}))
+
+                            (translate-records [batch]
+                              (let [batch (vec batch)
+                                    n     (count batch)]
+                                (cond
+                                  (zero? n) {:texts [] :metas []}
+                                  (= 1 n)   (single-out (first batch))
+
+                                  :else
+                                  (let [in-texts (mapv :canonical-text batch)
+                                        est     (long (approx-tokens in-texts))]
+                                    (if (> est max-toks)
+                                      (let [mid   (quot n 2)
+                                            left  (subvec batch 0 mid)
+                                            right (subvec batch mid)]
+                                        (merge-outs (translate-records left)
+                                                    (translate-records right)))
+                                      (try
+                                        (let [resp      (apply mt-batch! (concat [in-texts lang seed] proxy-opts))
+                                              out-texts (:texts resp)
+                                              meta      (:metadata resp)]
+                                          (when-not (= (count out-texts) n)
+                                            (throw (ex-info "MT batch translation returned wrong length"
+                                                            {:type :proxy-error
+                                                             :expected n
+                                                             :actual (count out-texts)
+                                                             :target-lang lang})))
+                                          {:texts out-texts
+                                           :metas (vec (repeat n meta))})
+                                        (catch clojure.lang.ExceptionInfo e
+                                          (let [data (ex-data e)]
+                                            (if (= :proxy-error (:type data))
+                                              (let [mid   (quot n 2)
+                                                    left  (subvec batch 0 mid)
+                                                    right (subvec batch mid)]
+                                                (merge-outs (translate-records left)
+                                                            (translate-records right)))
+                                              (throw e))))
+                                        (catch Exception _e
+                                          (let [mid   (quot n 2)
+                                                left  (subvec batch 0 mid)
+                                                right (subvec batch mid)]
+                                            (merge-outs (translate-records left)
+                                                        (translate-records right))))))))))]
+                      (mapcat
+                        (fn [batch]
+                          (let [{:keys [texts metas]} (translate-records batch)
+                                batch* (vec batch)]
+                            (mapv
+                              (fn [record out-text meta]
+                                (let [source {:source-id (:source-id record)
+                                              :text      (:canonical-text record)
+                                              :split     (:split record)}]
+                                  (-> (transform/make-variant-record
+                                        source :mt
+                                        [{:transform :mt :config config}]
+                                        seed
+                                        out-text
+                                        [meta])
+                                      (assoc :attack-family (:attack-family record)
+                                             :canonical-lang (:canonical-lang record)
+                                             :language lang))))
+                              batch*
+                              texts
+                              metas)))
+                        chunks))))
+                (sort languages)))))))
 
 ;; ============================================================
 ;; Eval transform application
