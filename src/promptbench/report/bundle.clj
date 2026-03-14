@@ -50,11 +50,17 @@
   [record]
   {:variant_id      (str (:variant-id record))
    :source_id       (str (:source-id record))
+   ;; Target language of the variant (required by docs; best-effort fallback to metadata)
+   :language        (cond
+                      (:language record) (name (:language record))
+                      (keyword? (get-in record [:metadata 0 :target-lang])) (name (get-in record [:metadata 0 :target-lang]))
+                      :else "unknown")
    :text            (str (:text record))
    :variant_type    (if (:variant-type record) (name (:variant-type record)) "unknown")
    :transform_chain (pr-str (:transform-chain record))
    :transform_seed  (:transform-seed record)
    :split           (if (:split record) (name (:split record)) "unknown")
+   ;; Extra columns (useful for stratified analysis; may be null)
    :attack_family   (when (:attack-family record) (name (:attack-family record)))
    :canonical_lang  (when (:canonical-lang record) (name (:canonical-lang record)))})
 
@@ -123,8 +129,8 @@
     (let [parquet-variants (if (seq variants)
                              (mapv prepare-variant-for-parquet variants)
                              ;; Write at least an empty-schema parquet
-                             [{:variant_id "" :source_id "" :text ""
-                               :variant_type "" :transform_chain "" :transform_seed 0
+                             [{:variant_id "" :source_id "" :language ""
+                               :text "" :variant_type "" :transform_chain "" :transform_seed 0
                                :split "" :attack_family nil :canonical_lang nil}])]
       (parquet/write-parquet parquet-variants (str bundle-dir "/variants.parquet")))
 

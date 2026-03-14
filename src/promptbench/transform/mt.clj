@@ -76,41 +76,68 @@
 ;; Translation via proxy
 ;; ============================================================
 
-(defn- translate-via-proxy
-  "Send a translation request to the proxy.
+(defn- parse-json-array
+  "Parse a JSON array from model output.
 
-    Always uses temperature=0 and includes the seed parameter
-    for maximum reproducibility."
-    [text target-lang seed & {:keys [proxy-url model max-tokens reasoning-effort]
-                               :or {proxy-url default-proxy-url
-                                    model default-model
-                                    max-tokens default-max-tokens
-                                    reasoning-effort default-reasoning-effort}}]
-   (let [lang-name (get lang-names target-lang (name target-lang))
-         auth-token (get-auth-token)
-         reasoning-effort (normalize-reasoning-effort reasoning-effort)
-         request-body {:model model
-                       :messages [{:role "system"
-                                   :content (str "You are a professional translator. "
-                                                 "Translate the following text to " lang-name ". "
-                                                 "Output ONLY the translation, nothing else. "
-                                                 "Preserve the meaning and tone.")}
-                                  {:role "user"
-                                   :content text}]
-                        :temperature 0
-                        :seed seed
-                        :max_tokens max-tokens
-                        :reasoning_effort (or reasoning-effort default-reasoning-effort)}
-          response (try
-                     (http/post proxy-url
-                                {:body (json/generate-string request-body)
-                                 :content-type :json
-                                 :accept :json
-                                :headers {"Authorization" (str "Bearer " auth-token)}
-                                :socket-timeout 600000
-                                :connection-timeout 60000})
-                    (catch Exception e
-                      (throw (ex-info (str "MT proxy request failed: " (.getMessage e))
+   The proxy sometimes returns leading/trailing whitespace; we trim.
+   We *intentionally* do not attempt to recover from non-JSON outputs here,
+   because silent recovery corrupts provenance." 
+  [s]
+  (let [t (str/trim (or s ""))]
+    (try
+      (let [v (json/parse-string t true)]
+        (when-not (sequential? v)
+          (throw (ex-info "Expected JSON array" {:type :proxy-error :got (type v)})))
+        v)
+      (catch Exception e
+        (throw (ex-info "Failed to parse JSON array from MT output"
+                        {:type :proxy-error
+                         :output-preview (subs t 0 (min 200 (count t)))}
+                        e))))))
+
+(defn- estimate-max-tokens-batch
+  "Estimate max_tokens for a batch of strings." 
+  [texts]
+  (let [n (reduce + 0 (map (comp count #(or % "")) texts))
+        approx (long (Math/ceil (/ (double n) 4.0)))
+        raw (+ approx 512)]
+    (long (max 512 (min 8192 raw)))))
+
+(defn- translate-via-proxy
+  "Send a single translation request to the proxy.
+
+   Always uses temperature=0 and includes the seed parameter
+   for maximum reproducibility." 
+  [text target-lang seed & {:keys [proxy-url model max-tokens reasoning-effort]
+                            :or {proxy-url default-proxy-url
+                                 model default-model
+                                 max-tokens default-max-tokens
+                                 reasoning-effort default-reasoning-effort}}]
+  (let [lang-name (get lang-names target-lang (name target-lang))
+        auth-token (get-auth-token)
+        reasoning-effort (normalize-reasoning-effort reasoning-effort)
+        request-body {:model model
+                      :messages [{:role "system"
+                                  :content (str "You are a professional translator. "
+                                                "Translate the following text to " lang-name ". "
+                                                "Output ONLY the translation, nothing else. "
+                                                "Preserve the meaning and tone.")}
+                                 {:role "user"
+                                  :content text}]
+                      :temperature 0
+                      :seed seed
+                      :max_tokens max-tokens
+                      :reasoning_effort (or reasoning-effort default-reasoning-effort)}
+        response (try
+                   (http/post proxy-url
+                              {:body (json/generate-string request-body)
+                               :content-type :json
+                               :accept :json
+                               :headers {"Authorization" (str "Bearer " auth-token)}
+                               :socket-timeout 600000
+                               :connection-timeout 60000})
+                   (catch Exception e
+                     (throw (ex-info (str "MT proxy request failed: " (.getMessage e))
                                      {:type :proxy-error
                                       :target-lang target-lang
                                       :model model
@@ -123,6 +150,72 @@
                       {:type :proxy-error
                        :response body})))
     (str/trim translated-text)))
+
+(defn translate-batch-via-proxy
+  "Translate a batch of texts to `target-lang` in ONE proxy call.
+
+   Returns:
+     {:texts [translated...]
+      :metadata {:target-lang ... :engine ... :seed ... :batch-size N :max-tokens ...}}
+
+   Contract:
+   - output MUST be a JSON array of strings of the same length.
+   - any mismatch throws (caller should retry or fail the stage).
+
+   This is a stage-level optimization; it is not wired as a generic transform
+   because the transform engine is currently single-input." 
+  [texts target-lang seed & {:keys [proxy-url model max-tokens reasoning-effort]
+                             :or {proxy-url default-proxy-url
+                                  model default-model
+                                  reasoning-effort default-reasoning-effort}}]
+  (let [texts (vec (map #(str (or % "")) texts))
+        lang-name (get lang-names target-lang (name target-lang))
+        auth-token (get-auth-token)
+        reasoning-effort (normalize-reasoning-effort reasoning-effort)
+        max-tokens (long (or max-tokens (estimate-max-tokens-batch texts)))
+        request-body {:model model
+                      :messages [{:role "system"
+                                  :content (str "You are a professional translator. "
+                                                "Translate each item in the provided JSON array into " lang-name ". "
+                                                "Output ONLY a valid JSON array of strings of the SAME LENGTH, "
+                                                "in the SAME ORDER. No markdown. No backticks. No commentary.")}
+                                 {:role "user"
+                                  :content (json/generate-string texts)}]
+                      :temperature 0
+                      :seed seed
+                      :max_tokens max-tokens
+                      :reasoning_effort (or reasoning-effort default-reasoning-effort)}
+        response (try
+                   (http/post proxy-url
+                              {:body (json/generate-string request-body)
+                               :content-type :json
+                               :accept :json
+                               :headers {"Authorization" (str "Bearer " auth-token)}
+                               :socket-timeout 600000
+                               :connection-timeout 60000})
+                   (catch Exception e
+                     (throw (ex-info (str "MT proxy batch request failed: " (.getMessage e))
+                                     {:type :proxy-error
+                                      :target-lang target-lang
+                                      :model model
+                                      :proxy-url proxy-url
+                                      :batch-size (count texts)}
+                                     e))))
+        body (json/parse-string (:body response) true)
+        content (get-in body [:choices 0 :message :content])
+        out (parse-json-array content)]
+    (when (not= (count out) (count texts))
+      (throw (ex-info "MT proxy batch size mismatch"
+                      {:type :proxy-error
+                       :expected (count texts)
+                       :actual (count out)})))
+    {:texts (mapv str/trim out)
+     :metadata {:target-lang target-lang
+                :engine (keyword model)
+                :seed seed
+                :batch-size (count texts)
+                :max-tokens max-tokens
+                :reasoning-effort (normalize-reasoning-effort reasoning-effort)}}))
 
 ;; ============================================================
 ;; Public API

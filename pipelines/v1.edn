@@ -44,12 +44,18 @@
   :transforms
   {:tier-1-mt   {:languages     [:es :fr :zh :ar :ja :hi :ru :pt :de :ko]
                  :engine        :glm-5
-                 :max-tokens    1024
-                 :backtranslate true}
-   :tier-2-mt   {:languages [:tl :sw :ur :bn :th :vi :id :tr :fa :he]
-                 :engine    :glm-5
-                 :max-tokens 1024
-                 :gated     true}
+                 :max-tokens    4096
+                 :backtranslate true
+                 ;; B-mode: translate ALL prompts, not only high-affinity families
+                 :scope         :all
+                 ;; Batch MT to avoid one-request-per-prompt
+                 :batch-size    25}
+   :tier-2-mt   {:languages  [:tl :sw :ur :bn :th :vi :id :tr :fa :he]
+                 :engine     :glm-5
+                 :max-tokens 4096
+                 :gated      true
+                 :scope      :all
+                 :batch-size 25}
   :code-mix    {:rates      [0.1 0.25 0.5]
                 :strategies [:inter-sentential :intra-sentential]
                 :pairings   :auto}

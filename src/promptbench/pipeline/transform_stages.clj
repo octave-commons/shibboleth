@@ -16,6 +16,7 @@
             [promptbench.taxonomy.registry :as taxonomy]
             [promptbench.pipeline.manifest :as manifest]
             [promptbench.util.crypto :as crypto]
+            [clojure.edn :as edn]
             [clojure.java.io :as io]))
 
 ;; ============================================================
@@ -64,46 +65,125 @@
 ;; MT variant generation (shared by stage 4 and 5)
 ;; ============================================================
 
+(defn- mt-scope
+  "Resolve MT selection scope.
+
+   Supported values:
+   - :high-affinity (default)
+   - :all" 
+  [mt-config]
+  (let [s (:scope mt-config)]
+    (cond
+      (nil? s) :high-affinity
+      (keyword? s) s
+      (string? s) (keyword s)
+      :else :high-affinity)))
+
+(defn- mt-eligible-record?
+  "Return true if this record should receive MT variants under mt-config." 
+  [record mt-config]
+  (case (mt-scope mt-config)
+    :all true
+    :high-affinity (family-has-high-mt-affinity? (:attack-family record))
+    ;; default
+    (family-has-high-mt-affinity? (:attack-family record))))
+
+(defn- mt-config->xform-config
+  "Build the per-execution config map passed to the :mt transform." 
+  [mt-config lang]
+  (cond-> {:target-lang lang}
+    (:engine mt-config) (assoc :engine (:engine mt-config))
+    (:proxy-url mt-config) (assoc :proxy-url (:proxy-url mt-config))
+    (:max-tokens mt-config) (assoc :max-tokens (:max-tokens mt-config))
+    (:max_tokens mt-config) (assoc :max_tokens (:max_tokens mt-config))))
+
 (defn- generate-mt-variants
   "Generate MT variants for a set of languages.
 
-   For each record whose attack family has :high MT affinity, generates
-   one variant per target language. Records are processed in deterministic
-   order (sorted by source-id).
+   Selection:
+   - default (backcompat): only records whose family has :high :mt affinity
+   - when mt-config contains {:scope :all}: translate ALL prompts (B-mode)
 
-    Arguments:
-    - records   — canonical records with splits
-    - languages — sorted vector of target language keywords
-    - seed      — integer build seed
-    - mt-config — tier config map (may include :engine, :proxy-url, :max-tokens)
+   Optimization:
+   - if mt-config contains {:batch-size N} with N>1, translate in JSON-array batches
+     via promptbench.transform.mt/translate-batch-via-proxy.
 
-    Returns a vector of variant records."
+   Records are processed in deterministic order (sorted by source-id).
+
+   Returns a vector of variant records." 
   [records languages seed mt-config]
-  (into []
-         (mapcat
-           (fn [record]
-             (if (family-has-high-mt-affinity? (:attack-family record))
-               (mapv
-                 (fn [lang]
-                   (let [config (cond-> {:target-lang lang}
-                                  (:engine mt-config) (assoc :engine (:engine mt-config))
-                                  (:proxy-url mt-config) (assoc :proxy-url (:proxy-url mt-config))
-                                  (:max-tokens mt-config) (assoc :max-tokens (:max-tokens mt-config))
-                                  (:max_tokens mt-config) (assoc :max_tokens (:max_tokens mt-config)))
-                         result (transform/execute-transform
-                                  :mt (:canonical-text record) config seed)
-                         source {:source-id (:source-id record)
-                                 :text      (:canonical-text record)
-                                 :split     (:split record)}]
-                    (transform/make-variant-record
-                      source :mt
-                      [{:transform :mt :config config}]
-                      seed
-                      (:text result)
-                      [(:metadata result)])))
-                (sort languages))
-              [])))
-        (sort-by :source-id records)))
+  (let [batch-size (long (or (:batch-size mt-config) 1))
+        eligible-records (filter #(mt-eligible-record? % mt-config)
+                                 (sort-by :source-id records))]
+    (if (<= batch-size 1)
+      ;; --- legacy: one request per (record, lang) ---
+      (into []
+            (mapcat
+              (fn [record]
+                (mapv
+                  (fn [lang]
+                    (let [config (mt-config->xform-config mt-config lang)
+                          result (transform/execute-transform :mt (:canonical-text record) config seed)
+                          source {:source-id (:source-id record)
+                                  :text      (:canonical-text record)
+                                  :split     (:split record)}]
+                      (-> (transform/make-variant-record
+                            source :mt
+                            [{:transform :mt :config config}]
+                            seed
+                            (:text result)
+                            [(:metadata result)])
+                          (assoc :attack-family (:attack-family record)
+                                 :canonical-lang (:canonical-lang record)
+                                 :language lang))))
+                  (sort languages)))
+              eligible-records))
+      ;; --- batched: one request per (batch, lang) ---
+      (let [;; Lazy require to avoid circular deps in tests
+            mt-ns (requiring-resolve 'promptbench.transform.mt/translate-batch-via-proxy)
+            chunks (partition-all batch-size eligible-records)]
+        (into []
+              (mapcat
+                (fn [lang]
+                  (let [config (mt-config->xform-config mt-config lang)
+                        proxy-opts (cond-> []
+                                     (:proxy-url mt-config) (conj :proxy-url (:proxy-url mt-config))
+                                     (:engine mt-config) (conj :model (name (:engine mt-config)))
+                                     (:max-tokens mt-config) (conj :max-tokens (:max-tokens mt-config))
+                                     (:max_tokens mt-config) (conj :max-tokens (:max_tokens mt-config)))
+                        ;; For each chunk, call batch translate, then emit per-record variant maps.
+                        per-lang-variants
+                        (mapcat
+                          (fn [batch]
+                            (let [in-texts   (mapv :canonical-text batch)
+                                  resp       (apply mt-ns (concat [in-texts lang seed] proxy-opts))
+                                  out-texts  (:texts resp)
+                                  batch-meta (:metadata resp)]
+                              (when-not (= (count out-texts) (count batch))
+                                (throw (ex-info "MT batch translation returned wrong length"
+                                                {:type :proxy-error
+                                                 :expected (count batch)
+                                                 :actual (count out-texts)
+                                                 :target-lang lang})))
+                              (mapv
+                                (fn [record out-text]
+                                  (let [source {:source-id (:source-id record)
+                                                :text      (:canonical-text record)
+                                                :split     (:split record)}]
+                                    (-> (transform/make-variant-record
+                                          source :mt
+                                          [{:transform :mt :config config}]
+                                          seed
+                                          out-text
+                                          [(or batch-meta {})])
+                                        (assoc :attack-family (:attack-family record)
+                                               :canonical-lang (:canonical-lang record)
+                                               :language lang))))
+                                batch
+                                out-texts)))
+                          chunks)]
+                    per-lang-variants)))
+                (sort languages))))))
 
 ;; ============================================================
 ;; Eval transform application
@@ -143,12 +223,15 @@
         source {:source-id (:source-id record)
                 :text      (:canonical-text record)
                 :split     (:split record)}]
-    (transform/make-variant-record
-      source transform-kw
-      [{:transform transform-kw :config config}]
-      seed
-      (:text result)
-      [(:metadata result)])))
+    (-> (transform/make-variant-record
+          source transform-kw
+          [{:transform transform-kw :config config}]
+          seed
+          (:text result)
+          [(:metadata result)])
+        (assoc :attack-family (:attack-family record)
+               :canonical-lang (:canonical-lang record)
+               :language (:canonical-lang record)))))
 
 ;; ============================================================
 ;; Stage 4: Tier-1 MT
@@ -176,40 +259,48 @@
    records]
   (let [manifests-dir (str data-dir "/manifests")
         variants-dir  (str data-dir "/variants")
+        manifest-path (str manifests-dir "/tier1-mt-manifest.edn")
+        variants-file (str variants-dir "/tier1-mt-variants.edn")
         _             (.mkdirs (io/file manifests-dir))
         _             (.mkdirs (io/file variants-dir))
         tier1-config  (or (:tier-1-mt transforms) {})
-        languages     (or (:languages tier1-config) tier-1-languages)
-        variants      (generate-mt-variants records languages seed tier1-config)
-        ;; Write variants to disk
-        variants-file (str variants-dir "/tier1-mt-variants.edn")
-        _             (spit variants-file (pr-str variants))
-        ;; Compute checksums
-        variant-checksum (crypto/sha256-file variants-file)
-        checksums        {"variants/tier1-mt-variants.edn" variant-checksum}
-        ;; Chain input hash from split manifest
-        split-manifest-path (str manifests-dir "/split-manifest.edn")
-        input-hash (if (.exists (io/file split-manifest-path))
-                     (:output-hash (manifest/read-manifest split-manifest-path))
-                     (crypto/sha256-string "no-split-manifest"))
-        output-hash (crypto/sha256-string (pr-str (into (sorted-map) checksums)))
-        config-hash (crypto/sha256-string
-                      (pr-str {:tier-1-mt tier1-config
-                               :seed seed
-                               :version version}))
-        stage-manifest (manifest/create-stage-manifest
-                         {:stage          :tier1-mt
-                          :version        version
-                          :seed           seed
-                          :input-hash     input-hash
-                          :output-hash    output-hash
-                          :artifact-count (count variants)
-                          :config-hash    config-hash
-                          :checksums      checksums})]
-    (manifest/write-manifest! stage-manifest
-                              (str manifests-dir "/tier1-mt-manifest.edn"))
-    {:manifest stage-manifest
-     :variants variants}))
+        languages     (vec (sort (or (:languages tier1-config) tier-1-languages)))
+        expected-config-hash
+        (crypto/sha256-string
+          (pr-str {:tier-1-mt (assoc tier1-config :languages languages)
+                   :seed seed
+                   :version version}))
+        cached-manifest (when (.exists (io/file manifest-path))
+                          (manifest/read-manifest manifest-path))]
+    (if (and cached-manifest
+             (= expected-config-hash (:config-hash cached-manifest))
+             (.exists (io/file variants-file)))
+      {:manifest cached-manifest
+       :variants (edn/read-string (slurp variants-file))}
+      (let [variants      (generate-mt-variants records languages seed tier1-config)
+            ;; Write variants to disk
+            _             (spit variants-file (pr-str variants))
+            ;; Compute checksums
+            variant-checksum (crypto/sha256-file variants-file)
+            checksums        {"variants/tier1-mt-variants.edn" variant-checksum}
+            ;; Chain input hash from split manifest
+            split-manifest-path (str manifests-dir "/split-manifest.edn")
+            input-hash (if (.exists (io/file split-manifest-path))
+                         (:output-hash (manifest/read-manifest split-manifest-path))
+                         (crypto/sha256-string "no-split-manifest"))
+            output-hash (crypto/sha256-string (pr-str (into (sorted-map) checksums)))
+            stage-manifest (manifest/create-stage-manifest
+                             {:stage          :tier1-mt
+                              :version        version
+                              :seed           seed
+                              :input-hash     input-hash
+                              :output-hash    output-hash
+                              :artifact-count (count variants)
+                              :config-hash    expected-config-hash
+                              :checksums      checksums})]
+        (manifest/write-manifest! stage-manifest manifest-path)
+        {:manifest stage-manifest
+         :variants variants}))))
 
 ;; ============================================================
 ;; Stage 5: Tier-2 MT
@@ -238,43 +329,51 @@
    records]
   (let [manifests-dir (str data-dir "/manifests")
         variants-dir  (str data-dir "/variants")
+        manifest-path (str manifests-dir "/tier2-mt-manifest.edn")
+        variants-file (str variants-dir "/tier2-mt-variants.edn")
         _             (.mkdirs (io/file manifests-dir))
         _             (.mkdirs (io/file variants-dir))
         tier2-config  (or (:tier-2-mt transforms) {})
-        languages     (or (:languages tier2-config) tier-2-languages)
-        variants      (if tier2
-                        (generate-mt-variants records languages seed tier2-config)
-                        [])
-        ;; Write variants to disk
-        variants-file (str variants-dir "/tier2-mt-variants.edn")
-        _             (spit variants-file (pr-str variants))
-        ;; Compute checksums
-        variant-checksum (crypto/sha256-file variants-file)
-        checksums        {"variants/tier2-mt-variants.edn" variant-checksum}
-        ;; Chain input hash from tier1-mt manifest
-        tier1-manifest-path (str manifests-dir "/tier1-mt-manifest.edn")
-        input-hash (if (.exists (io/file tier1-manifest-path))
-                     (:output-hash (manifest/read-manifest tier1-manifest-path))
-                     (crypto/sha256-string "no-tier1-mt-manifest"))
-        output-hash (crypto/sha256-string (pr-str (into (sorted-map) checksums)))
-        config-hash (crypto/sha256-string
-                      (pr-str {:tier-2-mt tier2-config
-                               :tier2     (boolean tier2)
-                               :seed      seed
-                               :version   version}))
-        stage-manifest (manifest/create-stage-manifest
-                         {:stage          :tier2-mt
-                          :version        version
-                          :seed           seed
-                          :input-hash     input-hash
-                          :output-hash    output-hash
-                          :artifact-count (count variants)
-                          :config-hash    config-hash
-                          :checksums      checksums})]
-    (manifest/write-manifest! stage-manifest
-                              (str manifests-dir "/tier2-mt-manifest.edn"))
-    {:manifest stage-manifest
-     :variants variants}))
+        languages     (vec (sort (or (:languages tier2-config) tier-2-languages)))
+        expected-config-hash
+        (crypto/sha256-string
+          (pr-str {:tier-2-mt (assoc tier2-config :languages languages)
+                   :tier2     (boolean tier2)
+                   :seed      seed
+                   :version   version}))
+        cached-manifest (when (.exists (io/file manifest-path))
+                          (manifest/read-manifest manifest-path))]
+    (if (and cached-manifest
+             (= expected-config-hash (:config-hash cached-manifest))
+             (.exists (io/file variants-file)))
+      {:manifest cached-manifest
+       :variants (edn/read-string (slurp variants-file))}
+      (let [variants      (if tier2
+                            (generate-mt-variants records languages seed tier2-config)
+                            [])
+            ;; Write variants to disk
+            _             (spit variants-file (pr-str variants))
+            ;; Compute checksums
+            variant-checksum (crypto/sha256-file variants-file)
+            checksums        {"variants/tier2-mt-variants.edn" variant-checksum}
+            ;; Chain input hash from tier1-mt manifest
+            tier1-manifest-path (str manifests-dir "/tier1-mt-manifest.edn")
+            input-hash (if (.exists (io/file tier1-manifest-path))
+                         (:output-hash (manifest/read-manifest tier1-manifest-path))
+                         (crypto/sha256-string "no-tier1-mt-manifest"))
+            output-hash (crypto/sha256-string (pr-str (into (sorted-map) checksums)))
+            stage-manifest (manifest/create-stage-manifest
+                             {:stage          :tier2-mt
+                              :version        version
+                              :seed           seed
+                              :input-hash     input-hash
+                              :output-hash    output-hash
+                              :artifact-count (count variants)
+                              :config-hash    expected-config-hash
+                              :checksums      checksums})]
+        (manifest/write-manifest! stage-manifest manifest-path)
+        {:manifest stage-manifest
+         :variants variants}))))
 
 ;; ============================================================
 ;; Stage 6: Eval Suites
@@ -304,59 +403,67 @@
    records]
   (let [manifests-dir (str data-dir "/manifests")
         variants-dir  (str data-dir "/variants")
+        manifest-path (str manifests-dir "/eval-suites-manifest.edn")
+        variants-file (str variants-dir "/eval-suite-variants.edn")
         _             (.mkdirs (io/file manifests-dir))
         _             (.mkdirs (io/file variants-dir))
         scope         (or (:scope suites) :test-only)
-        ;; Filter records by scope
-        scoped-records (case scope
-                         :test-only (filter #(= :test (:split %)) records)
-                         :all       records
-                         ;; Default to test-only for unknown scope values
-                         (filter #(= :test (:split %)) records))
-        ;; For each record, resolve and apply eval transforms via affinity
-        variants
-        (into []
-              (mapcat
-                (fn [record]
-                  (let [applicable (resolve-eval-transforms
-                                     (:attack-family record) transforms seed)]
-                    (when (seq applicable)
-                      (mapv
-                        (fn [transform-kw]
-                          (apply-eval-transform
-                            record
-                            transform-kw
-                            (default-eval-config transform-kw transforms)
-                            seed))
-                        (sort applicable))))))
-              (sort-by :source-id scoped-records))
-        ;; Write variants to disk
-        variants-file (str variants-dir "/eval-suite-variants.edn")
-        _             (spit variants-file (pr-str variants))
-        ;; Compute checksums
-        variant-checksum (crypto/sha256-file variants-file)
-        checksums        {"variants/eval-suite-variants.edn" variant-checksum}
-        ;; Chain input hash from tier2-mt manifest
-        tier2-manifest-path (str manifests-dir "/tier2-mt-manifest.edn")
-        input-hash (if (.exists (io/file tier2-manifest-path))
-                     (:output-hash (manifest/read-manifest tier2-manifest-path))
-                     (crypto/sha256-string "no-tier2-mt-manifest"))
-        output-hash (crypto/sha256-string (pr-str (into (sorted-map) checksums)))
-        config-hash (crypto/sha256-string
-                      (pr-str {:transforms transforms
-                               :suites     suites
-                               :seed       seed
-                               :version    version}))
-        stage-manifest (manifest/create-stage-manifest
-                         {:stage          :eval-suites
-                          :version        version
-                          :seed           seed
-                          :input-hash     input-hash
-                          :output-hash    output-hash
-                          :artifact-count (count variants)
-                          :config-hash    config-hash
-                          :checksums      checksums})]
-    (manifest/write-manifest! stage-manifest
-                              (str manifests-dir "/eval-suites-manifest.edn"))
-    {:manifest stage-manifest
-     :variants variants}))
+        expected-config-hash
+        (crypto/sha256-string
+          (pr-str {:transforms transforms
+                   :suites     suites
+                   :seed       seed
+                   :version    version}))
+        cached-manifest (when (.exists (io/file manifest-path))
+                          (manifest/read-manifest manifest-path))]
+    (if (and cached-manifest
+             (= expected-config-hash (:config-hash cached-manifest))
+             (.exists (io/file variants-file)))
+      {:manifest cached-manifest
+       :variants (edn/read-string (slurp variants-file))}
+      (let [;; Filter records by scope
+            scoped-records (case scope
+                             :test-only (filter #(= :test (:split %)) records)
+                             :all       records
+                             ;; Default to test-only for unknown scope values
+                             (filter #(= :test (:split %)) records))
+            ;; For each record, resolve and apply eval transforms via affinity
+            variants
+            (into []
+                  (mapcat
+                    (fn [record]
+                      (let [applicable (resolve-eval-transforms
+                                         (:attack-family record) transforms seed)]
+                        (when (seq applicable)
+                          (mapv
+                            (fn [transform-kw]
+                              (apply-eval-transform
+                                record
+                                transform-kw
+                                (default-eval-config transform-kw transforms)
+                                seed))
+                            (sort applicable))))))
+                  (sort-by :source-id scoped-records))
+            ;; Write variants to disk
+            _             (spit variants-file (pr-str variants))
+            ;; Compute checksums
+            variant-checksum (crypto/sha256-file variants-file)
+            checksums        {"variants/eval-suite-variants.edn" variant-checksum}
+            ;; Chain input hash from tier2-mt manifest
+            tier2-manifest-path (str manifests-dir "/tier2-mt-manifest.edn")
+            input-hash (if (.exists (io/file tier2-manifest-path))
+                         (:output-hash (manifest/read-manifest tier2-manifest-path))
+                         (crypto/sha256-string "no-tier2-mt-manifest"))
+            output-hash (crypto/sha256-string (pr-str (into (sorted-map) checksums)))
+            stage-manifest (manifest/create-stage-manifest
+                             {:stage          :eval-suites
+                              :version        version
+                              :seed           seed
+                              :input-hash     input-hash
+                              :output-hash    output-hash
+                              :artifact-count (count variants)
+                              :config-hash    expected-config-hash
+                              :checksums      checksums})]
+        (manifest/write-manifest! stage-manifest manifest-path)
+        {:manifest stage-manifest
+         :variants variants}))))
