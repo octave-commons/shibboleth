@@ -76,6 +76,132 @@
 ;; Translation via proxy
 ;; ============================================================
 
+;; Global throttle state to reduce 429s from the local proxy.
+;; Not used for determinism; only for pacing.
+(defonce ^:private last-request-ms (atom 0))
+
+(defn- now-ms []
+  (System/currentTimeMillis))
+
+(defn- maybe-throttle!
+  "Sleep to enforce a minimum delay between requests." 
+  [throttle-ms]
+  (when (and throttle-ms (pos? (long throttle-ms)))
+    (let [prev @last-request-ms
+          now (now-ms)
+          elapsed (- now prev)
+          wait-ms (- (long throttle-ms) (long elapsed))]
+      (when (pos? wait-ms)
+        (Thread/sleep wait-ms))
+      (reset! last-request-ms (now-ms)))))
+
+(defn- parse-retry-after-ms
+  "Parse Retry-After header into milliseconds.
+
+   If absent or unparsable, returns nil." 
+  [headers]
+  (when-let [ra (or (get headers "retry-after") (get headers "Retry-After"))]
+    (try
+      (let [v (if (string? ra) (str/trim ra) (str ra))
+            n (parse-long v)]
+        (when (and n (pos? n))
+          (* 1000 n)))
+      (catch Exception _
+        nil))))
+
+(defn- post-chat-with-retry
+  "POST to an OpenAI-compatible chat/completions endpoint with retries.
+
+   Retries on:
+   - HTTP 429
+   - HTTP 5xx
+   - connection errors/timeouts
+
+   Does NOT retry on 401/403 (auth/config) or other 4xx.
+
+   Returns the clj-http response map with :status and :body." 
+  [{:keys [proxy-url request-body auth-token retry-max retry-backoff-ms throttle-ms]}]
+  (let [retry-max        (long (or retry-max 10))
+        retry-backoff-ms (long (or retry-backoff-ms 500))
+        throttle-ms      (long (or throttle-ms 50))]
+    (loop [attempt 0]
+      (maybe-throttle! throttle-ms)
+      (let [resp (try
+                   (http/post proxy-url
+                              {:body (json/generate-string request-body)
+                               :content-type :json
+                               :accept :json
+                               :headers {"Authorization" (str "Bearer " auth-token)}
+                               :socket-timeout 600000
+                               :connection-timeout 60000
+                               :throw-exceptions false})
+                   (catch Exception e
+                     {:_exception e}))]
+        (cond
+        ;; Transport exception
+        (:_exception resp)
+        (if (< attempt (long retry-max))
+          (do
+            (Thread/sleep (long (+ (* (inc attempt) (long retry-backoff-ms))
+                                   (rand-int 250))))
+            (recur (inc attempt)))
+          (throw (ex-info (str "MT proxy request failed: " (.getMessage ^Exception (:_exception resp)))
+                          {:type :proxy-error
+                           :proxy-url proxy-url
+                           :attempt attempt}
+                          (:_exception resp))))
+
+        ;; Success
+        (= 200 (:status resp))
+        resp
+
+        ;; Rate limited
+        (= 429 (:status resp))
+        (if (< attempt (long retry-max))
+          (let [ra-ms (parse-retry-after-ms (:headers resp))
+                wait-ms (long (or ra-ms
+                                  (+ (* (inc attempt) (long retry-backoff-ms))
+                                     1000
+                                     (rand-int 500))))]
+            (Thread/sleep wait-ms)
+            (recur (inc attempt)))
+          (throw (ex-info "MT proxy rate-limited (429)"
+                          {:type :proxy-error
+                           :status 429
+                           :proxy-url proxy-url
+                           :attempt attempt
+                           :body-preview (subs (str (:body resp "")) 0 (min 200 (count (str (:body resp "")))))})))
+
+        ;; Server error
+        (<= 500 (long (:status resp)) 599)
+        (if (< attempt (long retry-max))
+          (do
+            (Thread/sleep (long (+ (* (inc attempt) (long retry-backoff-ms))
+                                   (rand-int 250))))
+            (recur (inc attempt)))
+          (throw (ex-info "MT proxy server error"
+                          {:type :proxy-error
+                           :status (:status resp)
+                           :proxy-url proxy-url
+                           :attempt attempt})))
+
+        ;; Auth/config errors are fatal
+        (or (= 401 (:status resp)) (= 403 (:status resp)))
+        (throw (ex-info "MT proxy unauthorized/forbidden"
+                        {:type :config-error
+                         :status (:status resp)
+                         :proxy-url proxy-url}))
+
+        ;; Other 4xx
+        :else
+        (throw (ex-info "MT proxy returned non-success status"
+                        {:type :proxy-error
+                         :status (:status resp)
+                         :proxy-url proxy-url
+                         :attempt attempt
+                         :body-preview (subs (str (:body resp "")) 0 (min 200 (count (str (:body resp "")))))}))))))
+  )
+
 (defn- strip-code-fences
   "Remove common markdown code fences from a model output string." 
   [s]
@@ -141,7 +267,8 @@
 
    Always uses temperature=0 and includes the seed parameter
    for maximum reproducibility." 
-  [text target-lang seed & {:keys [proxy-url model max-tokens reasoning-effort]
+  [text target-lang seed & {:keys [proxy-url model max-tokens reasoning-effort
+                                   retry-max retry-backoff-ms throttle-ms]
                             :or {proxy-url default-proxy-url
                                  model default-model
                                  max-tokens default-max-tokens
@@ -161,26 +288,19 @@
                       :seed seed
                       :max_tokens max-tokens
                       :reasoning_effort (or reasoning-effort default-reasoning-effort)}
-        response (try
-                   (http/post proxy-url
-                              {:body (json/generate-string request-body)
-                               :content-type :json
-                               :accept :json
-                               :headers {"Authorization" (str "Bearer " auth-token)}
-                               :socket-timeout 600000
-                               :connection-timeout 60000})
-                   (catch Exception e
-                     (throw (ex-info (str "MT proxy request failed: " (.getMessage e))
-                                     {:type :proxy-error
-                                      :target-lang target-lang
-                                      :model model
-                                      :proxy-url proxy-url}
-                                     e))))
+        response (post-chat-with-retry
+                   {:proxy-url proxy-url
+                    :request-body request-body
+                    :auth-token auth-token
+                    :retry-max retry-max
+                    :retry-backoff-ms retry-backoff-ms
+                    :throttle-ms throttle-ms})
         body (json/parse-string (:body response) true)
         translated-text (get-in body [:choices 0 :message :content])]
     (when (str/blank? translated-text)
       (throw (ex-info "MT proxy returned empty translation"
                       {:type :proxy-error
+                       :status (:status response)
                        :response body})))
     (str/trim translated-text)))
 
@@ -197,7 +317,8 @@
 
    This is a stage-level optimization; it is not wired as a generic transform
    because the transform engine is currently single-input." 
-  [texts target-lang seed & {:keys [proxy-url model max-tokens reasoning-effort]
+  [texts target-lang seed & {:keys [proxy-url model max-tokens reasoning-effort
+                                   retry-max retry-backoff-ms throttle-ms]
                              :or {proxy-url default-proxy-url
                                   model default-model
                                   reasoning-effort default-reasoning-effort}}]
@@ -218,28 +339,20 @@
                       :seed seed
                       :max_tokens max-tokens
                       :reasoning_effort (or reasoning-effort default-reasoning-effort)}
-        response (try
-                   (http/post proxy-url
-                              {:body (json/generate-string request-body)
-                               :content-type :json
-                               :accept :json
-                               :headers {"Authorization" (str "Bearer " auth-token)}
-                               :socket-timeout 600000
-                               :connection-timeout 60000})
-                   (catch Exception e
-                     (throw (ex-info (str "MT proxy batch request failed: " (.getMessage e))
-                                     {:type :proxy-error
-                                      :target-lang target-lang
-                                      :model model
-                                      :proxy-url proxy-url
-                                      :batch-size (count texts)}
-                                     e))))
+        response (post-chat-with-retry
+                   {:proxy-url proxy-url
+                    :request-body request-body
+                    :auth-token auth-token
+                    :retry-max retry-max
+                    :retry-backoff-ms retry-backoff-ms
+                    :throttle-ms throttle-ms})
         body (json/parse-string (:body response) true)
         content (get-in body [:choices 0 :message :content])
         out (parse-json-array content)]
     (when (not= (count out) (count texts))
       (throw (ex-info "MT proxy batch size mismatch"
                       {:type :proxy-error
+                       :status (:status response)
                        :expected (count texts)
                        :actual (count out)})))
     {:texts (mapv str/trim out)
@@ -287,7 +400,10 @@
                                           :proxy-url proxy-url
                                           :model model
                                           :max-tokens max-tokens
-                                          :reasoning-effort reasoning-effort)]
+                                          :reasoning-effort reasoning-effort
+                                          :retry-max (:retry-max config)
+                                          :retry-backoff-ms (:retry-backoff-ms config)
+                                          :throttle-ms (:throttle-ms config))]
       {:text translated
        :metadata {:target-lang target-lang
                   :engine (keyword model)

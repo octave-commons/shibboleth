@@ -162,7 +162,14 @@
                                :metas (into (:metas a) (:metas b))})
 
                             (single-out [record]
-                              (let [res (transform/execute-transform :mt (:canonical-text record) config seed)]
+                              (let [res (transform/execute-transform
+                                          :mt (:canonical-text record)
+                                          ;; pass retry/throttle knobs through config
+                                          (assoc config
+                                                 :retry-max (:retry-max mt-config)
+                                                 :retry-backoff-ms (:retry-backoff-ms mt-config)
+                                                 :throttle-ms (:throttle-ms mt-config))
+                                          seed)]
                                 {:texts [(:text res)]
                                  :metas [(:metadata res)]}))
 
@@ -183,7 +190,16 @@
                                         (merge-outs (translate-records left)
                                                     (translate-records right)))
                                       (try
-                                        (let [resp      (apply mt-batch! (concat [in-texts lang seed] proxy-opts))
+                                        (let [resp (apply mt-batch!
+                                                          (concat
+                                                            [in-texts lang seed]
+                                                            proxy-opts
+                                                            (when-let [rm (:retry-max mt-config)]
+                                                              [:retry-max rm])
+                                                            (when-let [rb (:retry-backoff-ms mt-config)]
+                                                              [:retry-backoff-ms rb])
+                                                            (when-let [tm (:throttle-ms mt-config)]
+                                                              [:throttle-ms tm])))
                                               out-texts (:texts resp)
                                               meta      (:metadata resp)]
                                           (when-not (= (count out-texts) n)
