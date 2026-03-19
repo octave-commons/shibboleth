@@ -50,6 +50,8 @@
                  :scope         :all
                  ;; Batch MT to avoid one-request-per-prompt
                  :batch-size    25
+                 ;; UX
+                 :progress      true
                  ;; Proxy hardening
                  :retry-max        25
                  :retry-backoff-ms 1000
@@ -60,6 +62,8 @@
                  :gated      true
                  :scope      :all
                  :batch-size 25
+                 ;; UX
+                 :progress   true
                  :retry-max        25
                  :retry-backoff-ms 1000
                  :throttle-ms      50}

@@ -104,19 +104,25 @@
    - default (backcompat): only records whose family has :high :mt affinity
    - when mt-config contains {:scope :all}: translate ALL prompts (B-mode)
 
-   Optimization:
-   - if mt-config contains {:batch-size N} with N>1, translate in JSON-array batches
-     via promptbench.transform.mt/translate-batch-via-proxy.
-
-   Records are processed in deterministic order (sorted by source-id).
+   Supports true resumability when `resume` is provided:
+   - writes per-language chunk files under :chunk-base
+   - skips existing chunk files on restart
+   - writes chunks atomically (tmp -> rename)
 
    Returns a vector of variant records." 
-  [records languages seed mt-config]
-  (let [batch-size (long (or (:batch-size mt-config) 1))
+  [records languages seed mt-config resume]
+  (let [batch-size (max 1 (long (or (:batch-size mt-config) 1)))
         eligible-records (filter #(mt-eligible-record? % mt-config)
-                                 (sort-by :source-id records))]
-    (if (<= batch-size 1)
-      ;; --- legacy: one request per (record, lang) ---
+                                 (sort-by :source-id records))
+        langs (vec (sort languages))
+        chunk-base (:chunk-base resume)
+        log-fn (:log-fn resume)
+        log! (fn [s]
+               (when log-fn
+                 (log-fn s)))]
+
+    ;; Legacy behavior (kept for very small runs / tests)
+    (if (and (nil? chunk-base) (= 1 batch-size))
       (into []
             (mapcat
               (fn [record]
@@ -136,11 +142,15 @@
                           (assoc :attack-family (:attack-family record)
                                  :canonical-lang (:canonical-lang record)
                                  :language lang))))
-                  (sort languages)))
+                  langs))
               eligible-records))
-      ;; --- batched: one request per (batch, lang) ---
+
+      ;; Chunked/resumable path (also works when batch-size=1)
       (let [mt-batch! (requiring-resolve 'promptbench.transform.mt/translate-batch-via-proxy)
-            chunks    (partition-all batch-size eligible-records)
+            chunks (vec (partition-all batch-size eligible-records))
+            total-chunks (max 1 (count chunks))
+            total-records (count eligible-records)
+            start-ms (System/currentTimeMillis)
             max-toks  (long (or (:max-tokens mt-config)
                                 (:max_tokens mt-config)
                                 8192))
@@ -153,101 +163,167 @@
                          (:engine mt-config)    (conj :model (name (:engine mt-config)))
                          (:max-tokens mt-config) (conj :max-tokens (:max-tokens mt-config))
                          (:max_tokens mt-config) (conj :max-tokens (:max_tokens mt-config)))]
-        (into []
-              (mapcat
-                (fn [lang]
-                  (let [config (mt-config->xform-config mt-config lang)]
-                    (letfn [(merge-outs [a b]
-                              {:texts (into (:texts a) (:texts b))
-                               :metas (into (:metas a) (:metas b))})
 
-                            (single-out [record]
-                              (let [res (transform/execute-transform
-                                          :mt (:canonical-text record)
-                                          ;; pass retry/throttle knobs through config
-                                          (assoc config
-                                                 :retry-max (:retry-max mt-config)
-                                                 :retry-backoff-ms (:retry-backoff-ms mt-config)
-                                                 :throttle-ms (:throttle-ms mt-config))
-                                          seed)]
-                                {:texts [(:text res)]
-                                 :metas [(:metadata res)]}))
+        (letfn [(spit-atomic! [path content]
+                  (let [tmp (str path ".tmp." (System/nanoTime))
+                        ftmp (io/file tmp)
+                        f (io/file path)]
+                    (.mkdirs (.getParentFile f))
+                    (spit tmp content)
+                    (when-not (.renameTo ftmp f)
+                      (io/copy ftmp f)
+                      (.delete ftmp))
+                    path))
 
-                            (translate-records [batch]
-                              (let [batch (vec batch)
-                                    n     (count batch)]
-                                (cond
-                                  (zero? n) {:texts [] :metas []}
-                                  (= 1 n)   (single-out (first batch))
+                (chunk-path [lang idx]
+                  (when chunk-base
+                    (str chunk-base "/" (name lang) "/" (format "%06d.edn" (long idx)))))
 
-                                  :else
-                                  (let [in-texts (mapv :canonical-text batch)
-                                        est     (long (approx-tokens in-texts))]
-                                    (if (> est max-toks)
-                                      (let [mid   (quot n 2)
-                                            left  (subvec batch 0 mid)
-                                            right (subvec batch mid)]
-                                        (merge-outs (translate-records left)
-                                                    (translate-records right)))
-                                      (try
-                                        (let [resp (apply mt-batch!
-                                                          (concat
-                                                            [in-texts lang seed]
-                                                            proxy-opts
-                                                            (when-let [rm (:retry-max mt-config)]
-                                                              [:retry-max rm])
-                                                            (when-let [rb (:retry-backoff-ms mt-config)]
-                                                              [:retry-backoff-ms rb])
-                                                            (when-let [tm (:throttle-ms mt-config)]
-                                                              [:throttle-ms tm])))
-                                              out-texts (:texts resp)
-                                              meta      (:metadata resp)]
-                                          (when-not (= (count out-texts) n)
-                                            (throw (ex-info "MT batch translation returned wrong length"
-                                                            {:type :proxy-error
-                                                             :expected n
-                                                             :actual (count out-texts)
-                                                             :target-lang lang})))
-                                          {:texts out-texts
-                                           :metas (vec (repeat n meta))})
-                                        (catch clojure.lang.ExceptionInfo e
-                                          (let [data (ex-data e)]
-                                            (if (= :proxy-error (:type data))
-                                              (let [mid   (quot n 2)
-                                                    left  (subvec batch 0 mid)
-                                                    right (subvec batch mid)]
-                                                (merge-outs (translate-records left)
-                                                            (translate-records right)))
-                                              (throw e))))
-                                        (catch Exception _e
-                                          (let [mid   (quot n 2)
-                                                left  (subvec batch 0 mid)
-                                                right (subvec batch mid)]
-                                            (merge-outs (translate-records left)
-                                                        (translate-records right))))))))))]
-                      (mapcat
-                        (fn [batch]
-                          (let [{:keys [texts metas]} (translate-records batch)
-                                batch* (vec batch)]
-                            (mapv
-                              (fn [record out-text meta]
-                                (let [source {:source-id (:source-id record)
-                                              :text      (:canonical-text record)
-                                              :split     (:split record)}]
-                                  (-> (transform/make-variant-record
-                                        source :mt
-                                        [{:transform :mt :config config}]
-                                        seed
-                                        out-text
-                                        [meta])
-                                      (assoc :attack-family (:attack-family record)
-                                             :canonical-lang (:canonical-lang record)
-                                             :language lang))))
-                              batch*
-                              texts
-                              metas)))
-                        chunks))))
-                (sort languages)))))))
+                (read-chunk! [path]
+                  (try
+                    (edn/read-string (slurp path))
+                    (catch Exception _e
+                      ;; corrupted chunk: delete and recompute
+                      (try (.delete (io/file path)) (catch Exception _ nil))
+                      nil)))
+
+                (merge-outs [a b]
+                  {:texts (into (:texts a) (:texts b))
+                   :metas (into (:metas a) (:metas b))})
+
+                (single-out [config record]
+                  (let [res (transform/execute-transform
+                              :mt (:canonical-text record)
+                              (assoc config
+                                     :retry-max (:retry-max mt-config)
+                                     :retry-backoff-ms (:retry-backoff-ms mt-config)
+                                     :throttle-ms (:throttle-ms mt-config))
+                              seed)]
+                    {:texts [(:text res)]
+                     :metas [(:metadata res)]}))
+
+                (translate-records [config lang batch]
+                  (let [batch (vec batch)
+                        n     (count batch)]
+                    (cond
+                      (zero? n) {:texts [] :metas []}
+                      (= 1 n)   (single-out config (first batch))
+
+                      :else
+                      (let [in-texts (mapv :canonical-text batch)
+                            est     (long (approx-tokens in-texts))]
+                        (if (> est max-toks)
+                          (let [mid   (quot n 2)
+                                left  (subvec batch 0 mid)
+                                right (subvec batch mid)]
+                            (merge-outs (translate-records config lang left)
+                                        (translate-records config lang right)))
+                          (try
+                            (let [resp (apply mt-batch!
+                                              (concat
+                                                [in-texts lang seed]
+                                                proxy-opts
+                                                (when-let [rm (:retry-max mt-config)]
+                                                  [:retry-max rm])
+                                                (when-let [rb (:retry-backoff-ms mt-config)]
+                                                  [:retry-backoff-ms rb])
+                                                (when-let [tm (:throttle-ms mt-config)]
+                                                  [:throttle-ms tm])))
+                                  out-texts (:texts resp)
+                                  meta      (:metadata resp)]
+                              (when-not (= (count out-texts) n)
+                                (throw (ex-info "MT batch translation returned wrong length"
+                                                {:type :proxy-error
+                                                 :expected n
+                                                 :actual (count out-texts)
+                                                 :target-lang lang})))
+                              {:texts out-texts
+                               :metas (vec (repeat n meta))})
+                            (catch clojure.lang.ExceptionInfo e
+                              (let [data (ex-data e)]
+                                (if (= :proxy-error (:type data))
+                                  (let [mid   (quot n 2)
+                                        left  (subvec batch 0 mid)
+                                        right (subvec batch mid)]
+                                    (merge-outs (translate-records config lang left)
+                                                (translate-records config lang right)))
+                                  (throw e))))
+                            (catch Exception _e
+                              (let [mid   (quot n 2)
+                                    left  (subvec batch 0 mid)
+                                    right (subvec batch mid)]
+                                (merge-outs (translate-records config lang left)
+                                            (translate-records config lang right))))))))))
+
+                (compute-chunk-variants [config lang batch]
+                  (let [{:keys [texts metas]} (translate-records config lang batch)
+                        batch* (vec batch)]
+                    (mapv
+                      (fn [record out-text meta]
+                        (let [source {:source-id (:source-id record)
+                                      :text      (:canonical-text record)
+                                      :split     (:split record)}]
+                          (-> (transform/make-variant-record
+                                source :mt
+                                [{:transform :mt :config config}]
+                                seed
+                                out-text
+                                [meta])
+                              (assoc :attack-family (:attack-family record)
+                                     :canonical-lang (:canonical-lang record)
+                                     :language lang))))
+                      batch*
+                      texts
+                      metas)))
+
+                (get-chunk-variants! [config lang idx batch]
+                  (if-let [p (chunk-path lang idx)]
+                    (if (.exists (io/file p))
+                      (or (read-chunk! p)
+                          (let [vs (compute-chunk-variants config lang batch)]
+                            (spit-atomic! p (pr-str vs))
+                            vs))
+                      (let [vs (compute-chunk-variants config lang batch)]
+                        (spit-atomic! p (pr-str vs))
+                        vs))
+                    ;; no chunk-base: compute in-memory only
+                    (compute-chunk-variants config lang batch)))]
+
+          ;; Accumulate all variants deterministically
+          (loop [langs* langs
+                 acc []]
+            (if (empty? langs*)
+              acc
+              (let [lang (first langs*)
+                    config (mt-config->xform-config mt-config lang)]
+                (log! (format "lang=%s chunks=%d records=%d" (name lang) total-chunks total-records))
+                (let [acc2
+                      (loop [i 0
+                             batches chunks
+                             acci acc]
+                        (if (empty? batches)
+                          acci
+                          (let [batch (first batches)
+                                vs (get-chunk-variants! config lang i batch)
+                                done (inc i)
+                                elapsed-ms (- (System/currentTimeMillis) start-ms)
+                                pct (if (pos? total-chunks) (* 100.0 (/ (double done) (double total-chunks))) 100.0)
+                                eta-ms (when (and (pos? done) (< done total-chunks))
+                                         (long (* (/ (double elapsed-ms) (double done))
+                                                  (- (double total-chunks) (double done)))))]
+                            (log! (format "lang=%s chunk=%d/%d (%.1f%%) variants+=%d elapsed=%.1fs eta=%.1fs"
+                                          (name lang)
+                                          done
+                                          total-chunks
+                                          pct
+                                          (count vs)
+                                          (/ (double elapsed-ms) 1000.0)
+                                          (/ (double (or eta-ms 0)) 1000.0)))
+                            (recur (inc i)
+                                   (rest batches)
+                                   (into acci vs)))))]
+                  (recur (rest langs*) acc2))))))
+        ))))
 
 ;; ============================================================
 ;; Eval transform application
@@ -341,7 +417,14 @@
              (.exists (io/file variants-file)))
       {:manifest cached-manifest
        :variants (edn/read-string (slurp variants-file))}
-      (let [variants      (generate-mt-variants records languages seed tier1-config)
+      (let [chunk-base (str variants-dir "/chunks/tier1-mt/" expected-config-hash)
+            log-fn (when (:progress tier1-config)
+                     (fn [s]
+                       (binding [*out* *err*]
+                         (println (str "[" (java.time.Instant/now) "] tier1-mt " s)))))
+            variants (generate-mt-variants records languages seed tier1-config
+                                           {:chunk-base chunk-base
+                                            :log-fn log-fn})
             ;; Write variants to disk
             _             (spit variants-file (pr-str variants))
             ;; Compute checksums
@@ -412,8 +495,15 @@
              (.exists (io/file variants-file)))
       {:manifest cached-manifest
        :variants (edn/read-string (slurp variants-file))}
-      (let [variants      (if tier2
-                            (generate-mt-variants records languages seed tier2-config)
+      (let [chunk-base (str variants-dir "/chunks/tier2-mt/" expected-config-hash)
+            log-fn (when (:progress tier2-config)
+                     (fn [s]
+                       (binding [*out* *err*]
+                         (println (str "[" (java.time.Instant/now) "] tier2-mt " s)))))
+            variants      (if tier2
+                            (generate-mt-variants records languages seed tier2-config
+                                                  {:chunk-base chunk-base
+                                                   :log-fn log-fn})
                             [])
             ;; Write variants to disk
             _             (spit variants-file (pr-str variants))

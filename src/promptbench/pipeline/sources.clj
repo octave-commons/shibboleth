@@ -2,7 +2,7 @@
    "def-source macro and source registry.
 
     Registers dataset sources with spec validation. Each source stores:
-    :description, :version, :license (keyword), :format (from #{:parquet :csv :jsonl :edn}),
+    :description, :version, :license (keyword), :format (from #{:parquet :csv :tsv :jsonl :edn}),
     requires :path, :url, or :urls, optional :schema and :taxonomy-mapping.
 
     Taxonomy mapping values must be keywords."
@@ -22,7 +22,7 @@
 (s/def ::description string?)
 (s/def ::version string?)
 (s/def ::license keyword?)
-(s/def ::format #{:parquet :csv :jsonl :edn})
+(s/def ::format #{:parquet :csv :tsv :jsonl :edn})
 (s/def ::url (s/nilable string?))
 (s/def ::urls (s/coll-of string? :kind vector? :min-count 1))
 (s/def ::path (s/nilable string?))
@@ -125,7 +125,7 @@
   "Define and register a dataset source.
 
    Required keys: :description (string), :version (string), :license (keyword),
-                  :format (from #{:parquet :csv :jsonl :edn}).
+                  :format (from #{:parquet :csv :tsv :jsonl :edn}).
    Requires either :url or :path (or both).
    Optional keys: :schema (map), :taxonomy-mapping (map with keyword values).
 

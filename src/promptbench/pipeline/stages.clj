@@ -153,6 +153,19 @@
                    (zipmap headers row)))
             rows))))
 
+(defn- read-tsv-file
+  "Read a TSV file (tab-separated) and return a vector of maps.
+   The first row is treated as headers, converted to keywords." 
+  [^String path]
+  (with-open [rdr (io/reader path)]
+    (let [data (csv/read-csv rdr :separator \tab)
+          headers (map keyword (first data))
+          rows (rest data)]
+      (into []
+            (map (fn [row]
+                   (zipmap headers row)))
+            rows))))
+
 ;; ============================================================
 ;; Parquet Reading (via Python bridge)
 ;; ============================================================
@@ -173,6 +186,7 @@
    Dispatches to:
    - :jsonl   → read-jsonl (JSON lines)
    - :csv     → read-csv-file (CSV with header row)
+   - :tsv     → read-tsv-file (TSV with header row)
    - :parquet → read-parquet-file (Parquet via polars/libpython-clj)
    - :edn     → clojure.edn/read-string
 
@@ -181,6 +195,7 @@
   (case format
     :jsonl   (read-jsonl path)
     :csv     (read-csv-file path)
+    :tsv     (read-tsv-file path)
     :parquet (read-parquet-file path)
     :edn     (clojure.edn/read-string (slurp path))
     (throw (ex-info (str "Unsupported source format: " format)
@@ -299,6 +314,36 @@
       ;; Fallback: legacy convention
       (or (:harm_category row) (get row "harm_category")))))
 
+(defn- extract-intent-label-field
+  "Extract the intent-label field from a source record using field-mapping.
+
+   Checks :field-mapping for a key mapping to :intent-label.
+   Falls back to :default-intent-label from source-data if present.
+
+   Returns the raw value (string/keyword/etc.) or nil." 
+  [row source-data]
+  (let [field-mapping (:field-mapping source-data)
+        intent-source-key (when field-mapping
+                            (some (fn [[k v]] (when (= v :intent-label) k)) field-mapping))]
+    (if intent-source-key
+      (or (get row intent-source-key)
+          (get row (name intent-source-key))
+          (:default-intent-label source-data))
+      (:default-intent-label source-data))))
+
+(defn- normalize-intent-label
+  "Normalize various source-specific label values into :benign or :adversarial.
+
+   Returns nil when no safe normalization can be inferred." 
+  [v]
+  (let [s (some-> v name str/lower-case)
+        s (or s (some-> v str str/lower-case str/trim))]
+    (cond
+      (nil? v) nil
+      (contains? #{"benign" "safe" "harmless" "allowed" "allow"} s) :benign
+      (contains? #{"adversarial" "unsafe" "harmful" "malicious" "blocked" "block"} s) :adversarial
+      :else nil)))
+
 ;; ============================================================
 ;; Cross-Source Deduplication
 ;; ============================================================
@@ -374,25 +419,82 @@
 ;; Stage 0: Fetch
 ;; ============================================================
 
+(defn- hf-auth-headers
+  "Return HTTP request headers for Hugging Face downloads.
+
+   For `gated=auto` datasets, HF requires an auth token after you accept the
+   dataset terms in the browser.
+
+   This function looks for one of:
+   - HF_TOKEN
+   - HUGGINGFACE_TOKEN
+
+   If no token is present, returns {}." 
+  []
+  (if-let [token (or (System/getenv "HF_TOKEN")
+                     (System/getenv "HUGGINGFACE_TOKEN"))]
+    {"Authorization" (str "Bearer " token)}
+    {}))
+
+(defn- detect-compression
+  "Infer compression from a URL/path string.
+
+   Returns one of:
+   - :gzip for *.gz
+   - :xz   for *.xz
+   - nil   otherwise" 
+  [^String s]
+  (cond
+    (and s (str/ends-with? s ".gz")) :gzip
+    (and s (str/ends-with? s ".xz")) :xz
+    :else nil))
+
+(defn- copy-stream->file!
+  "Copy an InputStream to dest-path, optionally decompressing.
+
+   compression may be nil, :gzip, or :xz." 
+  [in ^String dest-path compression]
+  (let [dest-file (io/file dest-path)]
+    (.mkdirs (.getParentFile dest-file))
+    (with-open [out (io/output-stream dest-file)
+                src (case compression
+                      :gzip (java.util.zip.GZIPInputStream. in)
+                      :xz   (org.tukaani.xz.XZInputStream. in)
+                      in)]
+      (io/copy src out))
+    dest-path))
+
+(defn- copy-file!
+  "Copy a local file to dest-path, optionally decompressing." 
+  [^String src-path ^String dest-path compression]
+  (with-open [in (io/input-stream (io/file src-path))]
+    (copy-stream->file! in dest-path compression)))
+
 (defn- download-url!
   "Download a file from a URL to a local destination path.
 
-   Uses clj-http with :as :byte-array to handle both text (CSV) and
-   binary (Parquet) formats correctly. Follows redirects.
+   - Streaming download (avoids loading large corpora into memory)
+   - Optional Authorization headers (HF gated datasets)
+   - Optional decompression (:gzip/:xz)
 
    Throws on HTTP errors (non-2xx status)."
-  [^String url ^String dest-path]
-  (let [resp (http/get url {:as :byte-array
-                            :throw-exceptions false
-                            :redirect-strategy :lax
-                            :socket-timeout 60000
-                            :connection-timeout 30000})]
-    (when-not (<= 200 (:status resp) 299)
-      (throw (ex-info (str "HTTP fetch failed with status " (:status resp)
-                           " for URL: " url)
-                      {:url url :status (:status resp)})))
-    (io/copy (:body resp) (io/file dest-path))
-    dest-path))
+  ([^String url ^String dest-path]
+   (download-url! url dest-path {}))
+  ([^String url ^String dest-path {:keys [headers compression]
+                                  :or {headers {} compression nil}}]
+   (let [resp (http/get url {:as :stream
+                             :throw-exceptions false
+                             :headers headers
+                             :redirect-strategy :lax
+                             :socket-timeout 600000
+                             :connection-timeout 60000})]
+     (when-not (<= 200 (:status resp) 299)
+       (throw (ex-info (str "HTTP fetch failed with status " (:status resp)
+                            " for URL: " url)
+                       {:url url :status (:status resp)})))
+     (with-open [in (:body resp)]
+       (copy-stream->file! in dest-path compression))
+     dest-path)))
 
 (defn- download-urls!
   "Download multiple URLs and concatenate them into a single destination file.
@@ -400,23 +502,28 @@
    Intended for JSONL corpora that ship as one file per language.
    Adds a newline separator between parts to avoid accidental line joining.
 
-   Throws on HTTP errors (non-2xx status)."
-  [urls ^String dest-path]
-  (with-open [out (io/output-stream (io/file dest-path))]
-    (doseq [url urls]
-      (let [resp (http/get url {:as :byte-array
-                                :throw-exceptions false
-                                :redirect-strategy :lax
-                                :socket-timeout 60000
-                                :connection-timeout 30000})]
-        (when-not (<= 200 (:status resp) 299)
-          (throw (ex-info (str "HTTP fetch failed with status " (:status resp)
-                               " for URL: " url)
-                          {:url url :status (:status resp)})))
-        (.write out ^bytes (:body resp))
-        ;; Separator between concatenated parts (safe for JSONL; blank lines ignored by reader).
-        (.write out (byte-array [(byte 10)])))))
-  dest-path)
+   Note: currently assumes parts are uncompressed." 
+  ([urls ^String dest-path]
+   (download-urls! urls dest-path {}))
+  ([urls ^String dest-path {:keys [headers]
+                            :or {headers {}}}]
+   (with-open [out (io/output-stream (io/file dest-path))]
+     (doseq [url urls]
+       (let [resp (http/get url {:as :stream
+                                 :throw-exceptions false
+                                 :headers headers
+                                 :redirect-strategy :lax
+                                 :socket-timeout 600000
+                                 :connection-timeout 60000})]
+         (when-not (<= 200 (:status resp) 299)
+           (throw (ex-info (str "HTTP fetch failed with status " (:status resp)
+                                " for URL: " url)
+                           {:url url :status (:status resp)})))
+         (with-open [in (:body resp)]
+           (io/copy in out))
+         ;; Separator between concatenated parts (safe for JSONL; blank lines ignored by reader).
+         (.write out (byte-array [(byte 10)])))))
+   dest-path))
 
 (defn fetch!
   "Stage 0: Fetch source datasets.
@@ -445,6 +552,7 @@
   (let [raw-dir (str data-dir "/raw")
         manifests-dir (str data-dir "/manifests")
         manifest-path (str manifests-dir "/fetch-manifest.edn")
+        hf-headers (hf-auth-headers)
         _ (.mkdirs (io/file raw-dir))
         _ (.mkdirs (io/file manifests-dir))
         expected-config-hash (sha256-string
@@ -479,12 +587,17 @@
                                 dest-path (str raw-dir "/" dest-filename)
                                 src-path (:path source-data)
                                 src-urls (:urls source-data)
-                                src-url  (:url source-data)]
+                                src-url  (:url source-data)
+                                compression (or (:compression source-data)
+                                                (detect-compression src-url)
+                                                (detect-compression src-path))]
                             ;; Fetch: prefer path (local), fallback to URL download
                             (cond
-                              ;; Local path — copy file
+                              ;; Local path — copy file (optionally decompress)
                               (and src-path (.exists (io/file src-path)))
-                              (io/copy (io/file src-path) (io/file dest-path))
+                              (if compression
+                                (copy-file! src-path dest-path compression)
+                                (io/copy (io/file src-path) (io/file dest-path)))
 
                               ;; URL list — download parts and concatenate
                               (seq src-urls)
@@ -493,7 +606,7 @@
                                   (binding [*out* *err*]
                                     (println (str "Fetching " (name source-name)
                                                   " (" (inc idx) "/" (count src-urls) ") from " url "..."))))
-                                (download-urls! src-urls dest-path))
+                                (download-urls! src-urls dest-path {:headers hf-headers}))
 
                               ;; URL — download from remote
                               src-url
@@ -501,7 +614,8 @@
                                 (binding [*out* *err*]
                                   (println (str "Fetching " (name source-name)
                                                 " from " src-url "...")))
-                                (download-url! src-url dest-path))
+                                (download-url! src-url dest-path {:headers hf-headers
+                                                                  :compression compression}))
 
                               ;; Local path specified but file doesn't exist
                               src-path
@@ -625,6 +739,7 @@
                                   lang-str (extract-language-field row source-data)
                                   lang-code (normalize-language-code lang-str)
                                   raw-harm (extract-harm-category-field row source-data)
+                                  raw-intent (extract-intent-label-field row source-data)
                                   row-id (or (:row_id row) (get row "row_id") idx)
                                   ;; Normalize text
                                   canon-text (normalize-text (str raw-text))
@@ -638,8 +753,11 @@
                                                        raw-harm (assoc :harm_category raw-harm))
                                   ;; Resolve taxonomy labels
                                   taxonomy (resolve-taxonomy record-for-taxonomy source-data)
+                                  direct-intent (normalize-intent-label raw-intent)
                                   ;; For ToxicChat-style sources, derive intent from toxicity/jailbreaking
-                                  intent-label (if has-toxicity-cols?
+                                  intent-label (if direct-intent
+                                                 direct-intent
+                                                 (if has-toxicity-cols?
                                                  (let [get-int (fn [row k]
                                                                  (let [v (if (contains? row k)
                                                                            (get row k)
@@ -653,7 +771,7 @@
                                                    (if (or (= 1 jailbreaking) (= 1 toxicity))
                                                      :adversarial
                                                      :benign))
-                                                 (:intent-label taxonomy))]
+                                                   (:intent-label taxonomy)))]
                               {:source-id      s-id
                                :canonical-hash c-hash
                                :canonical-text canon-text

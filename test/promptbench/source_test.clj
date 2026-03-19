@@ -175,7 +175,7 @@
 
 (deftest def-source-valid-formats-test
   (testing "All valid formats accepted"
-    (doseq [[fmt idx] (map vector [:parquet :csv :jsonl :edn] (range))]
+    (doseq [[fmt idx] (map vector [:parquet :csv :tsv :jsonl :edn] (range))]
       (sources/reset!)
       (sources/register-source!
         (keyword (str "fmt-test-" idx))

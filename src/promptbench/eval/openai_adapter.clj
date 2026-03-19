@@ -7,8 +7,21 @@
             [cheshire.core :as json]
             [clojure.string :as str]))
 
+(defn- parse-json-safe
+  "Parse a JSON string into keywordized Clojure data.
+
+   Returns nil on parse failure." 
+  [s]
+  (when (and (string? s) (not (str/blank? s)))
+    (try
+      (json/parse-string s true)
+      (catch Exception _ nil)))
+  )
+
 (def ^:private default-proxy-url
-  "http://127.0.0.1:8789/v1/chat/completions")
+  (or (System/getenv "PROMPTBENCH_PROXY_URL")
+      (System/getenv "PROXY_URL")
+      "http://127.0.0.1:8789/v1/chat/completions"))
 
 (defn get-auth-token
   "Read the proxy auth token from the environment." 
@@ -75,24 +88,36 @@
                                :headers {"Authorization" (str "Bearer " auth-token)}
                                :socket-timeout 600000
                                :connection-timeout 60000
-                               :throw-exceptions true})
+                               ;; We want structured error data (status/body) for retry logic,
+                               ;; so we handle non-2xx manually.
+                               :throw-exceptions false})
                    (catch Exception e
                      (throw (ex-info (str "Proxy request failed: " (.getMessage e))
                                      {:type :proxy-error
+                                      :cause :connection
                                       :proxy-url proxy-url
                                       :model model}
                                      e))))
         latency-ms (long (/ (- (System/nanoTime) t0) 1000000.0))
-        body (json/parse-string (:body response) true)
+        status (:status response)
+        body-str (:body response)
+        body (or (parse-json-safe body-str)
+                 ;; Keep a small hint for debugging; do not include large raw bodies.
+                 (when (string? body-str)
+                   {:raw (subs body-str 0 (min 512 (count body-str)))}))
         msg (get-in body [:choices 0 :message])
         content (when (map? msg) (get msg :content))
         reasoning (when (map? msg) (or (get msg :reasoning)
                                        (get msg :reasoning_content)
                                        (get msg :reasoningContent)))
-        text (cond
-               (and (string? content) (not (str/blank? content))) content
-               (and (string? reasoning) (not (str/blank? reasoning))) reasoning
-               :else "")
+        text-source (cond
+                      (and (string? content) (not (str/blank? content))) :content
+                      (and (string? reasoning) (not (str/blank? reasoning))) :reasoning
+                      :else nil)
+        text (case text-source
+               :content content
+               :reasoning reasoning
+               "")
         finish-reason (get-in body [:choices 0 :finish_reason])
         usage (:usage body)
         usage* (when (map? usage)
@@ -100,14 +125,26 @@
                   :output_tokens (:completion_tokens usage)
                   :total_tokens (:total_tokens usage)})
         model-id (or (:model body) model)]
+    (when-not (and (number? status) (<= 200 status 299))
+      (throw (ex-info (str "Proxy returned HTTP " status)
+                      {:type :proxy-error
+                       :cause :http-status
+                       :status status
+                       :model model
+                       :proxy-url proxy-url
+                       :response body})))
+
     (when (str/blank? (str/trim (or text "")))
       (throw (ex-info "Proxy returned empty text"
                       {:type :proxy-error
+                       :cause :empty-text
+                       :status status
                        :model model
                        :proxy-url proxy-url
                        :response body})))
     {:model_id model-id
      :text (str/trim text)
+     :text_source (some-> text-source name)
      :finish_reason finish-reason
      :usage usage*
      :latency_ms latency-ms

@@ -23,6 +23,7 @@
             [promptbench.corpus.curated :as curated]
             [promptbench.corpus.external :as external]
             [promptbench.pipeline.core :as pipeline]
+            [promptbench.pipeline.stages :as stages]
             [promptbench.verification.core :as verification]
             [promptbench.report.bundle :as bundle]
             [promptbench.report.core :as report]
@@ -157,6 +158,48 @@
         (catch Exception e
           (binding [*out* *err*]
             (println (str "Build failed: " (.getMessage e))))
+          {:exit-code 1 :error (.getMessage e)})))))
+
+;; ============================================================
+;; Fetch Command
+;; ============================================================
+
+(defn fetch-command
+  "Execute Stage 0 only: fetch/download all sources listed in the config.
+
+   Options:
+     --config PATH  — pipeline config file (required)
+     --seed N       — override build seed (optional)
+
+   This is intended for prefetching large external corpora without running
+   Python-dependent stages (parquet reading, embeddings, clustering, MT, etc.)."
+  [{:keys [opts]}]
+  (let [{:keys [config seed]} opts]
+    (when-not config
+      (binding [*out* *err*]
+        (println "Error: --config is required"))
+      {:exit-code 2 :error "Missing --config"})
+    (if-not config
+      {:exit-code 2 :error "Missing --config"}
+      (try
+        (let [cfg (load-config config)
+              final-seed (or seed (:seed cfg) 1337)
+              final-cfg (assoc cfg :seed final-seed)
+              result (stages/fetch! final-cfg)
+              files (:files result)]
+          (println "Fetch complete.")
+          (println (str "  Sources: " (count (or (:sources final-cfg) []))))
+          (println (str "  Files:   " (count files)))
+          (doseq [[k p] (sort-by key files)]
+            (println (str "  - " (name k) " -> " p)))
+          {:exit-code 0 :result result})
+        (catch clojure.lang.ExceptionInfo e
+          (binding [*out* *err*]
+            (println (str "Fetch failed: " (.getMessage e))))
+          {:exit-code 1 :error (.getMessage e)})
+        (catch Exception e
+          (binding [*out* *err*]
+            (println (str "Fetch failed: " (.getMessage e))))
           {:exit-code 1 :error (.getMessage e)})))))
 
 ;; ============================================================
@@ -371,6 +414,10 @@
     :fn   build-command
     :spec (select-keys cli-spec [:config :seed])
     :desc "Run full pipeline build"}
+   {:cmds ["fetch"]
+    :fn   fetch-command
+    :spec (select-keys cli-spec [:config :seed])
+    :desc "Fetch/download all sources (Stage 0 only)"}
    {:cmds ["verify"]
     :fn   verify-command
     :spec (select-keys cli-spec [:config])
@@ -403,6 +450,7 @@
   (println "  --format FORMAT  Output format (coverage only, default: markdown)")
   (println)
   (println "Examples:")
+  (println "  promptbench fetch --config pipelines/prefetch-all.edn")
   (println "  promptbench build --config pipelines/v1.edn --seed 1337")
   (println "  promptbench verify --config pipelines/v1.edn")
   (println "  promptbench coverage --config pipelines/v1.edn --format markdown")

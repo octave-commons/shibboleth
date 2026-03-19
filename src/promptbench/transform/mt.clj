@@ -14,7 +14,10 @@
 ;; Configuration
 ;; ============================================================
 
-(def ^:private default-proxy-url "http://127.0.0.1:8789/v1/chat/completions")
+(def ^:private default-proxy-url
+  (or (System/getenv "PROMPTBENCH_PROXY_URL")
+      (System/getenv "PROXY_URL")
+      "http://127.0.0.1:8789/v1/chat/completions"))
 (def ^:private default-model "glm-5")
 (def ^:private default-max-tokens 1024)
 (def ^:private default-reasoning-effort "none")

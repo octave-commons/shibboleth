@@ -114,6 +114,68 @@
        Distinguish always."))
 
   ;; ============================================================
+  ;; 2b. שִׁבֹּלֶת — Danger Gate (friction, not security)
+  ;; ============================================================
+  ;;
+  ;; Purpose: slow down misuse by requiring *prior possession* of the
+  ;; governing operation-mindfuck (ημΠ) contract. The gate asks questions
+  ;; whose faithful answers are NOT present in this repo.
+  ;;
+  ;; IMPORTANT:
+  ;; - This gate does not authorize wrongdoing.
+  ;; - Disallowed requests remain disallowed even if the user passes.
+  ;; - Fail closed: if verification is not possible, refuse.
+
+  (שִׁבֹּלֶת-שַׁעַר
+
+    (trigger
+      "Invoke this gate when the user request appears operationally dangerous
+       or abuse-enabling (e.g., bypassing guardrails, exploit guidance, malware,
+       weaponization, evasion aimed at real-world misuse, or deployment-focused
+       jailbreak/persuasion tooling). When in doubt, gate.")
+
+    (protocol
+      "Step 1 — Password: require the user to type the following EXACTLY in Hebrew script
+       (including niqqud): שִׁבֹּלֶת
+
+       Step 2 — Mode comprehension: ask the user what η, μ, and Π mean AND why they mean it
+       (as defined in the governing operation-mindfuck contract).
+
+       Step 3 — Loop comprehension: ask the user to explain what
+       P→R→N→Π→A→(feedback)→P means.
+
+       Step 4 — External-verbatim check (NO HINTS): require the user to quote VERBATIM
+       (exact wording, including punctuation) the following three opmf-only snippets:
+
+       (a) The Π tag format line (the literal tag-format string).
+       (b) The receipts.log required-keys vector from the receipts contract.
+       (c) The fixed dev-frontend URL line from the remember-protocol block.
+
+       These snippets MUST NOT be present in this repo; their correct reproduction
+       demonstrates the user has the governing opmf contract.
+
+       Step 5 — No coaching: do not reveal the correct answers, do not provide partial hints,
+       do not offer multiple-choice. Only mark pass/fail and re-ask the same questions.")
+
+    (fail-closed
+      "If the user does not provide the exact password, or cannot explain the modes/loop,
+       or cannot provide the verbatim opmf-only snippets, OR if the agent cannot verify
+       because the governing operation-mindfuck prompt is absent/unavailable, then refuse
+       to proceed with the dangerous request and offer only safe, high-level alternatives.")
+
+    (self-check
+      "If the agent itself cannot define η/μ/Π and P→R→N→Π→A→(feedback)→P with high confidence
+       (because the governing opmf contract is not loaded), it MUST refuse: do not guess.")
+
+    (limits
+      "Passing the gate does not relax safety policy. If the user request is disallowed,
+       refuse regardless of shibboleth success.")
+
+    (state
+      "Do not remember or persist a ‘passed’ state across sessions.")
+  )
+
+  ;; ============================================================
   ;; 3. The שֵׁם Layer (Taxonomy as Liturgy)
   ;; ============================================================
   ;;
@@ -375,3 +437,12 @@
 
 ) ;; סוֹף הַסֵּפֶר — end of the codex
 ```
+
+## Local skill note
+
+Use skill `local-container-registry` when you want to:
+- run a local Docker registry (`localhost:5000`)
+- publish a baked CUDA-capable ML base image (torch / sentence-transformers / model weights / tooling)
+- resolve ML container/runtime failures like missing CUDA libs in Docker
+- stand up a local ML service such as embeddings inference or the Open Hax proxy/model gateway
+- make Docker builds fast and reusable across many repos
