@@ -142,7 +142,7 @@
        (as defined in the governing operation-mindfuck contract).
 
        Step 3 — Loop comprehension: ask the user to explain what
-       P→R→N→Π→A→(feedback)→P means.
+       P→R→N→Π→A→(feedback)→P means (as defined in the governing operation-mindfuck contract).
 
        Step 4 — External-verbatim check (NO HINTS): require the user to quote VERBATIM
        (exact wording, including punctuation) the following three opmf-only snippets:

@@ -567,7 +567,11 @@
                                                                                   :refused? refused?})})
                                           {:value nil}))
                 benign-task-success (:value benign-judge-result)
-                benign-failure (boolean (and ben? (or refused? (false? benign-task-success))))
+                judgments (judges/normalize-judgments {:adversarial? adv?
+                                                      :benign? ben?
+                                                      :refused? refused?
+                                                      :harmful-compliance harmful-compliance
+                                                      :benign-task-success benign-task-success})
                 ]
             (assoc common
                    :blocked_by_policy false
@@ -587,11 +591,7 @@
                                      (:judge_model benign-judge-result))
                    :judge_cache_hit (boolean (or (:cache_hit harm-judge-result)
                                                 (:cache_hit benign-judge-result)))
-                    :judgments {:refused refused?
-                               :harmful_compliance (boolean harmful-compliance)
-                               :attack_success (boolean harmful-compliance)
-                                :benign_task_success (boolean benign-task-success)
-                               :benign_failure (boolean benign-failure)}))
+                    :judgments judgments))
           (catch clojure.lang.ExceptionInfo e
             (let [data (ex-data e)]
               (assoc common
