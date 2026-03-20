@@ -149,11 +149,12 @@
         (is (.exists tmp) "File should exist")
         (is (> (.length tmp) 0) "File should be non-empty")
 
-        ;; Verify via polars that it's valid parquet
-        (let [pl (py/import-module "polars")
-              df (py/call-attr pl "read_parquet" path)
-              shape (py/->jvm (py/get-attr df "shape"))]
-          (is (= 2 (first shape)) "Should have 2 rows")
-          (is (= 2 (second shape)) "Should have 2 columns"))
+        ;; Verify via pyarrow that it's valid parquet
+        (let [pq (py/import-module "pyarrow.parquet")
+              table (py/call-attr pq "read_table" path)
+              num-rows (py/->jvm (py/get-attr table "num_rows"))
+              num-cols (py/->jvm (py/get-attr table "num_columns"))]
+          (is (= 2 num-rows) "Should have 2 rows")
+          (is (= 2 num-cols) "Should have 2 columns"))
         (finally
           (.delete tmp))))))
