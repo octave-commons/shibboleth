@@ -182,7 +182,28 @@
                                                               (bad-request {:error (.getMessage e)
                                                                             :data (ex-data e)}))
                                                             (catch Exception e
-                                                              (bad-request {:error (.getMessage e)})))))}]]])
+                                                              (bad-request {:error (.getMessage e)})))))}]
+
+    ["/chat/sessions/:id/export" {:get (fn [req]
+                                          (let [id (get-in req [:path-params :id])]
+                                            (try
+                                              (ok {:export (chat-lab/session-export-preview id)})
+                                              (catch clojure.lang.ExceptionInfo e
+                                                (bad-request {:error (.getMessage e)
+                                                              :data (ex-data e)}))
+                                              (catch Exception e
+                                                (bad-request {:error (.getMessage e)})))))}]
+
+    ["/chat/export" {:get (fn [_]
+                             (ok {:export (chat-lab/export-preview)}))
+                      :post (fn [_]
+                              (try
+                                (ok {:snapshot (chat-lab/write-export-snapshot!)} )
+                                (catch clojure.lang.ExceptionInfo e
+                                  (bad-request {:error (.getMessage e)
+                                                :data (ex-data e)}))
+                                (catch Exception e
+                                  (bad-request {:error (.getMessage e)}))))}]]])
 
 (def app
   (-> (ring/ring-handler

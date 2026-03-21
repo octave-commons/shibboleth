@@ -1,11 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
   createChatSession,
+  getChatExportPreview,
   getChatSchema,
   getChatSession,
+  getChatSessionExport,
   labelChatItem,
   listChatSessions,
   sendChatMessage,
+  writeChatExportSnapshot,
 } from './api'
 
 type LabelOption = {
@@ -58,6 +61,38 @@ type ChatSessionSummary = {
   last_preview?: string
 }
 
+type SessionExportExample = {
+  example_id: string
+  input?: {
+    harm_category?: string
+    user_message?: string
+  }
+  observed?: {
+    response_class?: string
+    role?: string
+  }
+  target?: {
+    recommended_behavior?: string
+    safe_target_template?: string
+  }
+}
+
+type SessionExport = {
+  session_id: string
+  model?: string
+  example_count?: number
+  by_harm_category?: Record<string, number>
+  by_response_class?: Record<string, number>
+  examples?: SessionExportExample[]
+}
+
+type GlobalExport = {
+  session_count?: number
+  example_count?: number
+  by_harm_category?: Record<string, number>
+  by_response_class?: Record<string, number>
+}
+
 function whenLabel(value?: string | null): string {
   if (!value) return '—'
   return value.includes('T') ? value.replace('T', ' ').replace('Z', ' UTC') : value
@@ -81,6 +116,9 @@ export function ChatLab() {
   const [fakeToolsEnabled, setFakeToolsEnabled] = useState(true)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [sessionExport, setSessionExport] = useState<SessionExport | null>(null)
+  const [globalExport, setGlobalExport] = useState<GlobalExport | null>(null)
+  const [snapshotInfo, setSnapshotInfo] = useState<Record<string, unknown> | null>(null)
 
   const harmCategories = schema?.harm_categories ?? []
   const responseClasses = schema?.response_classes ?? []
@@ -96,6 +134,15 @@ export function ChatLab() {
     setActive((response.session ?? null) as ChatSession | null)
   }
 
+  async function refreshExports(id?: string | null): Promise<void> {
+    const [globalPreview, sessionPreview] = await Promise.all([
+      getChatExportPreview(),
+      id ? getChatSessionExport(id) : Promise.resolve({ export: null }),
+    ])
+    setGlobalExport((globalPreview.export ?? null) as GlobalExport | null)
+    setSessionExport((sessionPreview.export ?? null) as SessionExport | null)
+  }
+
   useEffect(() => {
     ;(async () => {
       try {
@@ -103,6 +150,7 @@ export function ChatLab() {
         const [schemaResponse, sessionResponse] = await Promise.all([getChatSchema(), listChatSessions()])
         setSchema(schemaResponse as ChatSchema)
         setSessions((sessionResponse.sessions ?? []) as ChatSessionSummary[])
+        await refreshExports(null)
         const models = (schemaResponse.default_models ?? []) as string[]
         if (models.length > 0) {
           setNewModel(models[0])
@@ -118,6 +166,7 @@ export function ChatLab() {
     const timer = setInterval(() => {
       void refreshActive(activeId)
       void refreshSessions()
+      void refreshExports(activeId)
     }, 2500)
     return () => clearInterval(timer)
   }, [activeId])
@@ -178,6 +227,7 @@ export function ChatLab() {
                     setActiveId(session.id)
                     setActive(session)
                     await refreshSessions()
+                    await refreshExports(session.id)
                   } catch (e: unknown) {
                     setErr(e instanceof Error ? e.message : String(e))
                   } finally {
@@ -198,6 +248,7 @@ export function ChatLab() {
                 onClick={async () => {
                   setActiveId(session.id)
                   await refreshActive(session.id)
+                  await refreshExports(session.id)
                 }}
               >
                 <div className="timelineAccent" style={{ background: session.fake_tools_enabled ? '#7C5CFC' : '#4DABF7' }} />
@@ -212,7 +263,7 @@ export function ChatLab() {
           </div>
         </div>
 
-        <div className="chatMain">
+          <div className="chatMain">
           {active ? (
             <>
               <div className="chatSessionHeader">
@@ -300,6 +351,7 @@ export function ChatLab() {
                         setActive((response.session ?? null) as ChatSession | null)
                         setCompose('')
                         await refreshSessions()
+                        await refreshExports(active.id)
                       } catch (e: unknown) {
                         setErr(e instanceof Error ? e.message : String(e))
                       } finally {
@@ -311,6 +363,70 @@ export function ChatLab() {
                   </button>
                 </div>
               </div>
+
+              <div className="chatExports">
+                <div className="sectionHeader">
+                  <h3>Training export preview</h3>
+                  <div className="buttons">
+                    <button onClick={() => void refreshExports(active.id)}>Refresh export</button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const response = await writeChatExportSnapshot()
+                          setSnapshotInfo((response.snapshot ?? null) as Record<string, unknown> | null)
+                          await refreshExports(active.id)
+                        } catch (e: unknown) {
+                          setErr(e instanceof Error ? e.message : String(e))
+                        }
+                      }}
+                    >
+                      Write export snapshot
+                    </button>
+                  </div>
+                </div>
+
+                <div className="statsGrid compactStats">
+                  <StatPill label="session examples" value={String(sessionExport?.example_count ?? '0')} />
+                  <StatPill label="global sessions" value={String(globalExport?.session_count ?? '0')} />
+                  <StatPill label="global examples" value={String(globalExport?.example_count ?? '0')} />
+                </div>
+
+                {snapshotInfo ? (
+                  <div className="small muted exportNote">
+                    last snapshot: {String(snapshotInfo.export_id ?? '—')} · examples={String(snapshotInfo.example_count ?? '—')}
+                  </div>
+                ) : null}
+
+                <div className="splitPane">
+                  <div>
+                    <h4>Session category counts</h4>
+                    <pre className="edn smallBlock">{JSON.stringify({
+                      by_harm_category: sessionExport?.by_harm_category ?? {},
+                      by_response_class: sessionExport?.by_response_class ?? {},
+                    }, null, 2)}</pre>
+                  </div>
+                  <div>
+                    <h4>Global category counts</h4>
+                    <pre className="edn smallBlock">{JSON.stringify({
+                      by_harm_category: globalExport?.by_harm_category ?? {},
+                      by_response_class: globalExport?.by_response_class ?? {},
+                    }, null, 2)}</pre>
+                  </div>
+                </div>
+
+                <div className="examplePreviewList">
+                  {(sessionExport?.examples ?? []).slice(0, 8).map((example) => (
+                    <div key={example.example_id} className="exampleCard">
+                      <div className="small muted">
+                        harm={example.input?.harm_category ?? '—'} · class={example.observed?.response_class ?? '—'} · target={example.target?.recommended_behavior ?? '—'}
+                      </div>
+                      <div className="exampleUser">{example.input?.user_message ?? '—'}</div>
+                      <div className="small muted">safe target template</div>
+                      <div className="exampleTarget">{example.target?.safe_target_template ?? '—'}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </>
           ) : (
             <div className="emptyState">Create or select a chat session to start manually collecting labeled safety examples.</div>
@@ -318,5 +434,14 @@ export function ChatLab() {
         </div>
       </div>
     </section>
+  )
+}
+
+function StatPill({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="statPill">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
   )
 }

@@ -126,3 +126,19 @@ export async function labelChatItem(sessionId: string, itemId: string, payload: 
     body: JSON.stringify(payload),
   })
 }
+
+export async function getChatSessionExport(id: string): Promise<any> {
+  return fetchJson(`/api/chat/sessions/${encodeURIComponent(id)}/export`)
+}
+
+export async function getChatExportPreview(): Promise<any> {
+  return fetchJson('/api/chat/export')
+}
+
+export async function writeChatExportSnapshot(): Promise<any> {
+  return fetchJson('/api/chat/export', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({}),
+  })
+}

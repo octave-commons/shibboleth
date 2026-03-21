@@ -495,12 +495,188 @@ button:disabled {
   gap: 12px;
 }
 
+.chatGrid {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 16px;
+}
+
+.chatSidebar {
+  display: grid;
+  gap: 12px;
+}
+
+.chatCreateCard {
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(14, 22, 41, 0.88);
+  border: 1px solid rgba(156, 163, 255, 0.12);
+}
+
+.chatCreateCard h3,
+.chatMain h3 {
+  margin-top: 0;
+}
+
+.chatCreateCard label,
+.chatComposer {
+  display: grid;
+  gap: 6px;
+}
+
+.chatCreateCard textarea,
+.chatComposer textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(156, 163, 255, 0.16);
+  background: rgba(10, 16, 32, 0.9);
+  color: #eef2ff;
+  resize: vertical;
+}
+
+.chatSessionList {
+  display: grid;
+  gap: 10px;
+  max-height: 520px;
+  overflow: auto;
+}
+
+.chatMain {
+  display: grid;
+  gap: 12px;
+}
+
+.chatExports {
+  display: grid;
+  gap: 12px;
+}
+
+.compactStats {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  margin-bottom: 0;
+}
+
+.statPill {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(18, 27, 49, 0.9);
+  border: 1px solid rgba(156, 163, 255, 0.12);
+  color: #dfe6ff;
+}
+
+.statPill span {
+  font-size: 12px;
+  color: #9aa6d9;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.exportNote {
+  margin-top: -4px;
+}
+
+.examplePreviewList {
+  display: grid;
+  gap: 10px;
+}
+
+.exampleCard {
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(18, 27, 49, 0.9);
+  border: 1px solid rgba(156, 163, 255, 0.12);
+}
+
+.exampleUser,
+.exampleTarget {
+  white-space: pre-wrap;
+  line-height: 1.45;
+  color: #f2f5ff;
+  margin-top: 4px;
+}
+
+.chatSessionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.transcript {
+  display: grid;
+  gap: 12px;
+  max-height: 900px;
+  overflow: auto;
+}
+
+.transcriptItem {
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(156, 163, 255, 0.12);
+  background: rgba(14, 22, 41, 0.9);
+}
+
+.transcriptItem.user {
+  border-left: 4px solid #7c5cfc;
+}
+
+.transcriptItem.assistant {
+  border-left: 4px solid #2b8a3e;
+}
+
+.transcriptItem.toolcall {
+  border-left: 4px solid #f08c00;
+}
+
+.transcriptHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.transcriptContent {
+  white-space: pre-wrap;
+  line-height: 1.5;
+  color: #f2f5ff;
+}
+
+.toolCallBlock {
+  max-height: 180px;
+}
+
+.labelRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.labelButton {
+  background: rgba(255, 255, 255, 0.06);
+  color: #dfe6ff;
+  border: 1px solid rgba(156, 163, 255, 0.16);
+  box-shadow: none;
+}
+
+.labelButton.active {
+  background: linear-gradient(180deg, rgba(124, 92, 252, 0.95), rgba(93, 63, 211, 0.95));
+  border-color: rgba(166, 175, 255, 0.34);
+  box-shadow: 0 8px 20px rgba(60, 44, 140, 0.28);
+}
+
 code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 @media (max-width: 900px) {
   .heroCard,
+  .chatGrid,
   .grid,
   .splitPane {
     grid-template-columns: 1fr;
