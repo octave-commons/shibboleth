@@ -303,7 +303,7 @@ export function App() {
     if (!activeBenchId) return
     const timer = setInterval(async () => {
       try {
-        const [detail, list, agg] = await Promise.all([getBenchRun(activeBenchId), listBenchRuns(), getBenchAggregate()])
+        const [detail, list, agg] = await Promise.all([getBenchRun(activeBenchId), listBenchRuns(), getBenchAggregate(aggregateRequest)])
         setActiveBench((detail.run ?? null) as BenchmarkRunDetail | null)
         setBenchRuns((list.runs ?? []) as BenchmarkRunSummary[])
         setAggregate((agg.aggregate ?? null) as AggregateSummary | null)
@@ -312,7 +312,7 @@ export function App() {
       }
     }, 3000)
     return () => clearInterval(timer)
-  }, [activeBenchId])
+  }, [activeBenchId, aggregateRequest])
 
   return (
     <div className="dashboardShell">
