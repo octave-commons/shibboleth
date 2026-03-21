@@ -18,6 +18,7 @@
             [reitit.ring :as ring]
             [reitit.ring.middleware.muuntaja :as muuntaja]
             [clojure.string :as str]
+            [promptbench.control-plane.bench :as bench]
             [promptbench.control-plane.runs :as runs]
             [promptbench.corpus.external :as external]
             [promptbench.corpus.curated :as curated]
@@ -101,7 +102,45 @@
                                       (bad-request {:error (.getMessage e)
                                                     :data (ex-data e)}))
                                     (catch Exception e
-                                      (bad-request {:error (.getMessage e)})))))}]]])
+                                      (bad-request {:error (.getMessage e)})))))}]
+
+    ["/bench/runs" {:get (fn [_]
+                            (ok {:runs (bench/list-benchmark-runs)}))
+                     :post (fn [{:keys [body-params]}]
+                             (try
+                               (ok (bench/start-benchmark-job! body-params))
+                               (catch clojure.lang.ExceptionInfo e
+                                 (bad-request {:error (.getMessage e)
+                                               :data (ex-data e)}))
+                               (catch Exception e
+                                 (bad-request {:error (.getMessage e)}))))}]
+
+    ["/bench/runs/:id" {:get (fn [req]
+                                (let [id (get-in req [:path-params :id])]
+                                  (if-let [run (some-> id bench/get-benchmark-run)]
+                                    (ok {:run run})
+                                    (not-found {:error "benchmark run not found" :id id}))))}]
+
+    ["/bench/aggregate" {:get (fn [_]
+                                 (ok {:aggregate (bench/aggregate-benchmark-runs)}))
+                          :post (fn [{:keys [body-params]}]
+                                  (try
+                                    (ok {:aggregate (bench/aggregate-benchmark-runs body-params)})
+                                    (catch clojure.lang.ExceptionInfo e
+                                      (bad-request {:error (.getMessage e)
+                                                    :data (ex-data e)}))
+                                    (catch Exception e
+                                      (bad-request {:error (.getMessage e)}))))}]
+
+    ["/bench/runs/:id/stop" {:post (fn [req]
+                                      (let [id (get-in req [:path-params :id])]
+                                        (try
+                                          (ok (bench/stop-benchmark-job! id))
+                                          (catch clojure.lang.ExceptionInfo e
+                                            (bad-request {:error (.getMessage e)
+                                                          :data (ex-data e)}))
+                                          (catch Exception e
+                                            (bad-request {:error (.getMessage e)})))))}]]])
 
 (def app
   (-> (ring/ring-handler
@@ -113,7 +152,8 @@
       ;; Dev CORS for local UI
       (wrap-cors
         :access-control-allow-origin [#"http://localhost:.*"
-                                      #"http://127\.0\.0\.1:.*"]
+                                      #"http://127\.0\.0\.1:.*"
+                                      #"https://shibboleth\.promethean\.rest"]
         :access-control-allow-methods [:get :post :put :delete :options]
         :access-control-allow-headers ["content-type"])))
 
