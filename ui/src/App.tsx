@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import logoUrl from './assets/shibboleth-logo.svg'
+import { ChatLab } from './ChatLab'
 import { RunTimeline } from './RunTimeline'
 import { TruthScatter } from './TruthScatter'
 import {
@@ -338,6 +339,10 @@ export function App() {
           <StatCard label="Completed runs" value={String(completedJobs.length)} sub="metrics materialized" />
           <StatCard label="Aggregate unique cases" value={String(aggregate?.unique_event_count ?? '—')} sub="deduped across judged runs" />
           <StatCard label="Duplicate reductions" value={String(aggregate?.duplicate_event_count ?? '—')} sub="overlap removed from the big picture" />
+        </div>
+
+        <div className="grid dashboardGrid">
+          <ChatLab />
         </div>
 
         <div className="grid dashboardGrid">
