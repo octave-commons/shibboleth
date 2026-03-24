@@ -41,6 +41,17 @@
     (string? effort) (let [s (str/trim effort)] (when-not (str/blank? s) s))
     :else nil))
 
+(defn- extract-tool-calls
+  [msg]
+  (let [calls (when (map? msg) (get msg :tool_calls))]
+    (when (sequential? calls)
+      (mapv (fn [call]
+              {:id (:id call)
+               :type (:type call)
+               :function {:name (get-in call [:function :name])
+                          :arguments (get-in call [:function :arguments])}})
+            calls))))
+
 (defn chat-completions!
   "Invoke /v1/chat/completions via the proxy.
 
@@ -62,7 +73,7 @@
     :raw <parsed-json>}
 
    Throws ex-info on request or response errors." 
-  [{:keys [model messages temperature seed max-output-tokens reasoning-effort proxy-url]
+  [{:keys [model messages temperature seed max-output-tokens reasoning-effort proxy-url tools tool-choice]
     :or {temperature 0
          max-output-tokens 512
          proxy-url default-proxy-url}}]
@@ -78,7 +89,9 @@
                        :temperature temperature
                        :max_tokens max-output-tokens}
                        (some? seed) (assoc :seed seed)
-                       (some? reasoning-effort) (assoc :reasoning_effort reasoning-effort))
+                       (some? reasoning-effort) (assoc :reasoning_effort reasoning-effort)
+                       (seq tools) (assoc :tools tools)
+                       (some? tool-choice) (assoc :tool_choice tool-choice))
         t0 (System/nanoTime)
         response (try
                    (http/post proxy-url
@@ -124,7 +137,8 @@
                  {:input_tokens (:prompt_tokens usage)
                   :output_tokens (:completion_tokens usage)
                   :total_tokens (:total_tokens usage)})
-        model-id (or (:model body) model)]
+        model-id (or (:model body) model)
+        tool-calls (extract-tool-calls msg)]
     (when-not (and (number? status) (<= 200 status 299))
       (throw (ex-info (str "Proxy returned HTTP " status)
                       {:type :proxy-error
@@ -134,7 +148,8 @@
                        :proxy-url proxy-url
                        :response body})))
 
-    (when (str/blank? (str/trim (or text "")))
+    (when (and (str/blank? (str/trim (or text "")))
+               (not (seq tool-calls)))
       (throw (ex-info "Proxy returned empty text"
                       {:type :proxy-error
                        :cause :empty-text
@@ -145,6 +160,7 @@
     {:model_id model-id
      :text (str/trim text)
      :text_source (some-> text-source name)
+     :tool_calls tool-calls
      :finish_reason finish-reason
      :usage usage*
      :latency_ms latency-ms

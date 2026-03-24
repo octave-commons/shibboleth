@@ -18,6 +18,8 @@
             [reitit.ring :as ring]
             [reitit.ring.middleware.muuntaja :as muuntaja]
             [clojure.string :as str]
+            [promptbench.control-plane.bench :as bench]
+            [promptbench.control-plane.chat-lab :as chat-lab]
             [promptbench.control-plane.runs :as runs]
             [promptbench.corpus.external :as external]
             [promptbench.corpus.curated :as curated]
@@ -101,7 +103,107 @@
                                       (bad-request {:error (.getMessage e)
                                                     :data (ex-data e)}))
                                     (catch Exception e
-                                      (bad-request {:error (.getMessage e)})))))}]]])
+                                      (bad-request {:error (.getMessage e)})))))}]
+
+    ["/bench/runs" {:get (fn [_]
+                            (ok {:runs (bench/list-benchmark-runs)}))
+                     :post (fn [{:keys [body-params]}]
+                             (try
+                               (ok (bench/start-benchmark-job! body-params))
+                               (catch clojure.lang.ExceptionInfo e
+                                 (bad-request {:error (.getMessage e)
+                                               :data (ex-data e)}))
+                               (catch Exception e
+                                 (bad-request {:error (.getMessage e)}))))}]
+
+    ["/bench/runs/:id" {:get (fn [req]
+                                (let [id (get-in req [:path-params :id])]
+                                  (if-let [run (some-> id bench/get-benchmark-run)]
+                                    (ok {:run run})
+                                    (not-found {:error "benchmark run not found" :id id}))))}]
+
+    ["/bench/aggregate" {:get (fn [_]
+                                 (ok {:aggregate (bench/aggregate-benchmark-runs)}))
+                          :post (fn [{:keys [body-params]}]
+                                  (try
+                                    (ok {:aggregate (bench/aggregate-benchmark-runs body-params)})
+                                    (catch clojure.lang.ExceptionInfo e
+                                      (bad-request {:error (.getMessage e)
+                                                    :data (ex-data e)}))
+                                    (catch Exception e
+                                      (bad-request {:error (.getMessage e)}))))}]
+
+    ["/bench/runs/:id/stop" {:post (fn [req]
+                                      (let [id (get-in req [:path-params :id])]
+                                        (try
+                                          (ok (bench/stop-benchmark-job! id))
+                                          (catch clojure.lang.ExceptionInfo e
+                                            (bad-request {:error (.getMessage e)
+                                                          :data (ex-data e)}))
+                                          (catch Exception e
+                                            (bad-request {:error (.getMessage e)})))))}]
+
+    ["/chat/schema" {:get (fn [_]
+                             (ok (chat-lab/schema)))}]
+
+    ["/chat/sessions" {:get (fn [_]
+                               (ok {:sessions (chat-lab/list-sessions)}))
+                        :post (fn [{:keys [body-params]}]
+                                (try
+                                  (ok {:session (chat-lab/create-session! body-params)})
+                                  (catch clojure.lang.ExceptionInfo e
+                                    (bad-request {:error (.getMessage e)
+                                                  :data (ex-data e)}))
+                                  (catch Exception e
+                                    (bad-request {:error (.getMessage e)}))))}]
+
+    ["/chat/sessions/:id" {:get (fn [req]
+                                  (let [id (get-in req [:path-params :id])]
+                                    (if-let [session (chat-lab/get-session id)]
+                                      (ok {:session session})
+                                      (not-found {:error "chat session not found" :id id}))))}]
+
+    ["/chat/sessions/:id/messages" {:post (fn [{:keys [body-params path-params]}]
+                                             (let [id (:id path-params)]
+                                               (try
+                                                 (ok {:session (chat-lab/add-user-turn! id body-params)})
+                                                 (catch clojure.lang.ExceptionInfo e
+                                                   (bad-request {:error (.getMessage e)
+                                                                 :data (ex-data e)}))
+                                                 (catch Exception e
+                                                   (bad-request {:error (.getMessage e)})))))}]
+
+    ["/chat/sessions/:id/items/:itemId/label" {:post (fn [{:keys [body-params path-params]}]
+                                                        (let [id (:id path-params)
+                                                              item-id (:itemId path-params)]
+                                                          (try
+                                                            (ok {:session (chat-lab/label-item! id item-id body-params)})
+                                                            (catch clojure.lang.ExceptionInfo e
+                                                              (bad-request {:error (.getMessage e)
+                                                                            :data (ex-data e)}))
+                                                            (catch Exception e
+                                                              (bad-request {:error (.getMessage e)})))))}]
+
+    ["/chat/sessions/:id/export" {:get (fn [req]
+                                          (let [id (get-in req [:path-params :id])]
+                                            (try
+                                              (ok {:export (chat-lab/session-export-preview id)})
+                                              (catch clojure.lang.ExceptionInfo e
+                                                (bad-request {:error (.getMessage e)
+                                                              :data (ex-data e)}))
+                                              (catch Exception e
+                                                (bad-request {:error (.getMessage e)})))))}]
+
+    ["/chat/export" {:get (fn [_]
+                             (ok {:export (chat-lab/export-preview)}))
+                      :post (fn [_]
+                              (try
+                                (ok {:snapshot (chat-lab/write-export-snapshot!)} )
+                                (catch clojure.lang.ExceptionInfo e
+                                  (bad-request {:error (.getMessage e)
+                                                :data (ex-data e)}))
+                                (catch Exception e
+                                  (bad-request {:error (.getMessage e)}))))}]]])
 
 (def app
   (-> (ring/ring-handler
@@ -113,7 +215,8 @@
       ;; Dev CORS for local UI
       (wrap-cors
         :access-control-allow-origin [#"http://localhost:.*"
-                                      #"http://127\.0\.0\.1:.*"]
+                                      #"http://127\.0\.0\.1:.*"
+                                      #"https://shibboleth\.promethean\.rest"]
         :access-control-allow-methods [:get :post :put :delete :options]
         :access-control-allow-headers ["content-type"])))
 

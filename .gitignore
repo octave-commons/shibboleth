@@ -32,3 +32,8 @@ classes/
 # Local notes / scratch
 docs/notes/
 docs/dev/
+
+# UI build artifacts
+ui/node_modules/
+ui/dist/
+ui/*.tsbuildinfo

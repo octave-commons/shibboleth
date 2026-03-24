@@ -1,0 +1,202 @@
+{:version "0.1.0"
+ :kind :task-prompt-seed-sources
+ :created-at "2026-03-18T00:00:00Z"
+ :sources
+ [{:dataset :harmbench
+   :priority 1
+   :role :core-adversarial-task-seed
+   :url "https://huggingface.co/datasets/AlignmentResearch/HarmBench"
+   :canonical-sources ["https://arxiv.org/abs/2402.04249"
+                       "https://github.com/centerforaisafety/HarmBench"]
+   :license :unknown
+   :gated? false
+   :expected-prompt-fields [:instructions :content :answer_prompt]
+   :expected-label-fields [:clf_label :proxy_clf_label]
+   :wrapper-confidence :high
+   :seed-kind :direct-task
+   :notes "Strong first-line harmful task seed; verify canonical source and license before ingest."}
+
+  {:dataset :hex-phi
+   :priority 2
+   :role :core-adversarial-task-seed
+   :url "https://huggingface.co/datasets/LLM-Tuning-Safety/HEx-PHI"
+   :canonical-sources ["https://huggingface.co/datasets/LLM-Tuning-Safety/HEx-PHI"]
+   :license :other
+   :gated? true
+   :expected-prompt-fields [:instruction :prompt]
+   :expected-label-fields [:category]
+   :wrapper-confidence :high
+   :seed-kind :direct-task
+   :notes "Policy-oriented harmful instruction benchmark; gated custom license."}
+
+  {:dataset :advbench
+   :priority 3
+   :role :core-adversarial-task-seed
+   :url "https://huggingface.co/datasets/AlignmentResearch/AdvBench"
+   :canonical-sources ["https://huggingface.co/datasets/AlignmentResearch/AdvBench"]
+   :license :unknown
+   :gated? false
+   :expected-prompt-fields [:instructions :content :answer_prompt]
+   :expected-label-fields [:clf_label :proxy_clf_label]
+   :wrapper-confidence :high
+   :seed-kind :direct-task
+   :notes "Canonical harmful behavior benchmark; dedupe against HarmBench/HEx-PHI."}
+
+  {:dataset :malicious-instruct
+   :priority 4
+   :role :core-adversarial-task-seed
+   :url "https://huggingface.co/datasets/walledai/MaliciousInstruct"
+   :canonical-sources ["https://huggingface.co/datasets/walledai/MaliciousInstruct"]
+   :license :cc-by-sa-4.0
+   :gated? false
+   :expected-prompt-fields [:prompt]
+   :expected-label-fields []
+   :wrapper-confidence :medium
+   :seed-kind :direct-task
+   :notes "Small harmful instruction set; useful as diversity booster after dedupe."}
+
+  {:dataset :agentharm
+   :priority 5
+   :role :specialized-adversarial-task-seed
+   :url "https://huggingface.co/datasets/ai-safety-institute/AgentHarm"
+   :canonical-sources ["https://arxiv.org/abs/2410.09024"]
+   :license :other
+   :gated? false
+   :expected-prompt-fields [:behavior :prompt :goal]
+   :expected-label-fields [:split :category]
+   :wrapper-confidence :high
+   :seed-kind :agentic-task
+   :notes "Specialized agent/tool-abuse harmful task source; keep separate from direct asks."}
+
+  {:dataset :cysecbench
+   :priority 6
+   :role :specialized-adversarial-task-seed
+   :url "https://arxiv.org/abs/2501.01335"
+   :canonical-sources ["https://arxiv.org/abs/2501.01335"]
+   :license :unknown
+   :gated? false
+   :expected-prompt-fields [:prompt :instruction]
+   :expected-label-fields [:category]
+   :wrapper-confidence :high
+   :seed-kind :cyber-task
+   :notes "Cybersecurity-specific harmful task corpus; ingest as a vertical slice."}
+
+  {:dataset :strongreject
+   :priority 7
+   :role :secondary-adversarial-task-seed
+   :url "https://huggingface.co/datasets/Machlovi/strongreject-dataset"
+   :canonical-sources ["https://arxiv.org/abs/2402.10260"
+                       "https://strong-reject.readthedocs.io/"]
+   :license :mixed-provenance
+   :gated? false
+   :expected-prompt-fields [:prompt]
+   :expected-label-fields [:category :prompt_label :source]
+   :wrapper-confidence :medium
+   :seed-kind :benchmark-hard-case
+   :notes "Use mainly for hard-case seeding and eval, not as the sole canonical base."}
+
+  {:dataset :ultrasafety
+   :priority 20
+   :role :derived-adversarial-source
+   :url "https://huggingface.co/datasets/openbmb/UltraSafety"
+   :canonical-sources ["https://huggingface.co/datasets/openbmb/UltraSafety"]
+   :license :mit
+   :gated? false
+   :expected-prompt-fields [:instruction :prompt]
+   :expected-label-fields [:category]
+   :wrapper-confidence :medium
+   :seed-kind :derived-augmentation
+   :notes "Derived from prior harmful instruction sources; useful for scale, not first-line canonical seeding."}
+
+  {:dataset :sorry-bench
+   :priority 21
+   :role :eval-mutation-source
+   :url "https://huggingface.co/datasets/sorry-bench/sorry-bench-202503"
+   :canonical-sources ["https://arxiv.org/abs/2406.14598"
+                       "https://github.com/SORRY-Bench/SORRY-Bench"]
+   :license :other
+   :gated? true
+   :expected-prompt-fields [:prompt :question]
+   :expected-label-fields [:topic :mutation]
+   :wrapper-confidence :medium
+   :seed-kind :eval-mutation
+   :notes "Multilingual refusal benchmark; best used for eval and mutation templates rather than canonical raw seeds."}
+
+  {:dataset :socialharmbench
+   :priority 22
+   :role :specialized-adversarial-task-seed
+   :url "https://huggingface.co/datasets/psyonp/SocialHarmBench"
+   :canonical-sources ["https://arxiv.org/abs/2510.04891"]
+   :license :apache-2.0
+   :gated? false
+   :expected-prompt-fields [:prompt :question :request]
+   :expected-label-fields [:category]
+   :wrapper-confidence :high
+   :seed-kind :social-harm-task
+   :notes "Specialized socially harmful request benchmark; keep as a separate domain slice, not first-line canonical base."}
+
+  {:dataset :harmmetric-eval
+   :priority 23
+   :role :judge-benchmark-source
+   :url "https://huggingface.co/datasets/qusgo/HarmMetric_Eval"
+   :canonical-sources ["https://arxiv.org/abs/2509.24384"]
+   :license :unknown
+   :gated? true
+   :expected-prompt-fields [:prompt :request]
+   :expected-label-fields [:harmful_label :judge_label]
+   :wrapper-confidence :unknown
+   :seed-kind :judge-benchmark
+   :notes "Likely more useful for benchmarking harmfulness judges than as a first-line prompt seed corpus; HF API probe returned unauthorized."}
+
+  {:dataset :or-bench
+   :source-key :or-bench-hard-1k
+   :priority 101
+   :role :benign-complement
+   :url "https://huggingface.co/datasets/bench-llm/or-bench"
+   :canonical-sources ["https://arxiv.org/abs/2405.20947"]
+   :license :cc-by-4.0
+   :gated? false
+   :expected-prompt-fields [:prompt]
+   :expected-label-fields [:category]
+   :wrapper-confidence :high
+   :seed-kind :benign-lookalike
+   :notes "Use for benign high-risk-looking task prompts, not adversarial seeds."}
+
+  {:dataset :xstest
+   :priority 103
+   :role :benign-complement
+   :url "https://huggingface.co/datasets/Paul/XSTest"
+   :canonical-sources ["https://arxiv.org/abs/2308.01263"]
+   :license :cc-by-4.0
+   :gated? false
+   :expected-prompt-fields [:prompt]
+   :expected-label-fields [:type :label]
+   :wrapper-confidence :high
+   :seed-kind :benign-lookalike
+   :notes "Compact over-refusal control set with safe/unsafe contrasts; useful as benign complement and evaluation control."}
+
+  {:dataset :wildguardmix
+   :priority 104
+   :role :benign-complement
+   :url "https://huggingface.co/datasets/allenai/wildguardmix"
+   :canonical-sources ["https://arxiv.org/abs/2406.18495"]
+   :license :odc-by
+   :gated? true
+   :expected-prompt-fields [:prompt :instruction]
+   :expected-label-fields [:prompt_harm_label :response_harm_label :response_refusal_label]
+   :wrapper-confidence :medium
+   :seed-kind :judge-calibration
+   :notes "Best used for prompt-harm/refusal judge calibration and benign complementing rather than canonical raw task seeding."}
+
+  {:dataset :bells-o-content-moderation-input
+   :priority 102
+   :role :benign-complement
+   :url "https://huggingface.co/datasets/centrepourlasecuriteia/content-moderation-input-dataset"
+   :canonical-sources ["https://huggingface.co/datasets/bellsop/BELLS-O_Dataset"]
+   :license :cc-by-nc-sa-4.0
+   :gated? true
+   :expected-prompt-fields [:prompt :input]
+   :expected-label-fields [:label :category]
+   :wrapper-confidence :high
+   :seed-kind :benign-lookalike
+   :notes "Multilingual benign/moderation complement; noncommercial and gated."}]}
