@@ -1,6 +1,12 @@
 ARG BASE_IMAGE=clojure:temurin-21-tools-deps-bookworm
 FROM ${BASE_IMAGE}
 
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DEFAULT_TIMEOUT=300 \
+    PIP_RETRIES=10 \
+    PIP_ROOT_USER_ACTION=ignore
+
 WORKDIR /app
 
 # Python is required for embed+cluster (sentence-transformers + hdbscan) and Parquet IO.
@@ -21,6 +27,7 @@ RUN if ! command -v python3 >/dev/null 2>&1 || ! command -v pip3 >/dev/null 2>&1
 
 # Install Python deps used via libpython-clj.
 # If you want to slim this image, pin/trim these.
+RUN pip3 install --break-system-packages --index-url https://download.pytorch.org/whl/cpu "torch==2.5.1+cpu"
 RUN pip3 install --no-cache-dir --break-system-packages \
     "numpy>=1.26" \
     "scikit-learn>=1.4" \
