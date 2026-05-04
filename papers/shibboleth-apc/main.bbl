@@ -1,0 +1,41 @@
+\begin{thebibliography}{6}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[{All-Prompt-Jailbreak}(2024)]{allpromptjailbreak2024}
+{All-Prompt-Jailbreak}.
+\newblock All-prompt-jailbreak, 2024.
+\newblock Public jailbreak prompt corpus.
+
+\bibitem[{Aya RedTeaming}(2024)]{ayaredteaming2024}
+{Aya RedTeaming}.
+\newblock Aya redteaming, 2024.
+\newblock Multilingual red-teaming dataset.
+
+\bibitem[Gebru et~al.(2021)Gebru, Morgenstern, Vecchione, Vaughan, Wallach,
+  Daum{\'e}~III, and Crawford]{gebru2021datasheets}
+Timnit Gebru, Jamie Morgenstern, Briana Vecchione, Jennifer~Wortman Vaughan,
+  Hanna Wallach, Hal Daum{\'e}~III, and Kate Crawford.
+\newblock Datasheets for datasets.
+\newblock \emph{Communications of the ACM}, 64\penalty0 (12):\penalty0 86--92,
+  2021.
+
+\bibitem[{Octave Commons}(2026)]{shibbolethdraft2026}
+{Octave Commons}.
+\newblock Shibboleth internal research draft and pipeline specifications, 2026.
+\newblock Repository-local working documents.
+
+\bibitem[{WildJailbreak}(2024)]{wildjailbreak2024}
+{WildJailbreak}.
+\newblock Wildjailbreak, 2024.
+\newblock Adversarial prompt benchmark and dataset.
+
+\bibitem[{XSafety}(2024)]{xsafety2024}
+{XSafety}.
+\newblock Xsafety, 2024.
+\newblock Multilingual safety dataset.
+
+\end{thebibliography}
