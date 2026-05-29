@@ -1,3 +1,17 @@
+---
+uuid: "orgs-octave-commons-shibboleth-kanban-orgs-octave-commons-shibboleth-specs-drafts-task-prompt-seed-builder-md"
+title: "Task prompt seed builder"
+status: incoming
+priority: P3
+labels: ["specs", "migrated-spec"]
+created_at: "2026-05-29T04:01:16.860Z"
+source: "orgs/octave-commons/shibboleth/specs/drafts/task-prompt-seed-builder.md"
+category: "specs"
+---
+
+> Source: `orgs/octave-commons/shibboleth/specs/drafts/task-prompt-seed-builder.md`
+> Migrated-to-kanban: `orgs/octave-commons/shibboleth/kanban/drafts/task-prompt-seed-builder.md`
+
 # Task prompt seed builder
 
 ## Goal

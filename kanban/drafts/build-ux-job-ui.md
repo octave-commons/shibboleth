@@ -1,3 +1,17 @@
+---
+uuid: "orgs-octave-commons-shibboleth-kanban-orgs-octave-commons-shibboleth-specs-drafts-build-ux-job-ui-md"
+title: "Build UX + Job UI (Shibboleth)"
+status: incoming
+priority: P3
+labels: ["specs", "migrated-spec"]
+created_at: "2026-05-29T04:01:16.852Z"
+source: "orgs/octave-commons/shibboleth/specs/drafts/build-ux-job-ui.md"
+category: "specs"
+---
+
+> Source: `orgs/octave-commons/shibboleth/specs/drafts/build-ux-job-ui.md`
+> Migrated-to-kanban: `orgs/octave-commons/shibboleth/kanban/drafts/build-ux-job-ui.md`
+
 # Build UX + Job UI (Shibboleth)
 
 Created: 2026-03-15

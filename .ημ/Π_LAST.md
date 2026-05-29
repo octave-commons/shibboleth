@@ -1,19 +1,16 @@
-# Π handoff
+# Π handoff: eta-mu kanban migration octave commons batch
 
-- time: 2026-03-21T19:39:02Z
-- branch: main
-- pre-Π HEAD: b731c51
-- Π HEAD: pending at capture time; resolved by the final commit after artifact assembly
+- Time: 2026-05-29T04:02:26Z
+- Repo: `orgs/octave-commons/shibboleth`
+- Manifest: `/tmp/eta-mu-kanban-batches/agent_octave_commons.json`
+- Migration command: `node services/eta-mu/kanban/scripts/migrate-specs-to-kanban.mjs --root /home/err/devel --manifest /tmp/eta-mu-kanban-batches/agent_octave_commons.json`
+- Verification: `eta-mu-beta kanban count --tasks-dir <boardDir>` for each migrated board in this repo
+- Concurrent-agent policy: staged only migrated kanban directories, removed spec/specs directories, and `.ημ` handoff artifacts.
 
-## Summary
-- Persist the manual chat labeling lab across the Clojure control plane, React UI, stylesheet refinements, receipts, and the new export-pipeline draft.
-- Carry forward the verified shibboleth.promethean.rest chat-lab flow and make the current working tree auditable as a dedicated Π branch plus tag.
+## Boards
 
-## Notes
-- push branch: pi/fork-tax/2026-03-21-193439
-- origin remains git@github.com:octave-commons/shibboleth.git; snapshot pushed on a dedicated Π branch plus tag to preserve the current local main history.
+- `orgs/octave-commons/shibboleth/kanban` (21 cards) removed `orgs/octave-commons/shibboleth/specs`
 
-## Verification
-- pass: npm --prefix ui run build
-- pass: public chat-lab verification from 2026-03-21T04:36:12Z receipt
-- note: local bare require of promptbench.control-plane.server without the :control-plane alias still fails because ring/jetty deps live under that alias
+## Residual / blockers
+
+- None known before push.

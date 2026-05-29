@@ -1,3 +1,17 @@
+---
+uuid: "orgs-octave-commons-shibboleth-kanban-orgs-octave-commons-shibboleth-specs-drafts-ml-cuda-base-image-and-skill-md"
+title: "ML CUDA base image + global container skill"
+status: incoming
+priority: P3
+labels: ["specs", "migrated-spec"]
+created_at: "2026-05-29T04:01:16.853Z"
+source: "orgs/octave-commons/shibboleth/specs/drafts/ml-cuda-base-image-and-skill.md"
+category: "specs"
+---
+
+> Source: `orgs/octave-commons/shibboleth/specs/drafts/ml-cuda-base-image-and-skill.md`
+> Migrated-to-kanban: `orgs/octave-commons/shibboleth/kanban/drafts/ml-cuda-base-image-and-skill.md`
+
 # ML CUDA base image + global container skill
 
 ## Goal

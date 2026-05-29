@@ -1,3 +1,17 @@
+---
+uuid: "orgs-octave-commons-shibboleth-kanban-orgs-octave-commons-shibboleth-specs-drafts-remote-ui-observability-deploy-md"
+title: "Remote UI observability + deploy for shibboleth.promethean.rest"
+status: incoming
+priority: P3
+labels: ["specs", "migrated-spec"]
+created_at: "2026-05-29T04:01:16.858Z"
+source: "orgs/octave-commons/shibboleth/specs/drafts/remote-ui-observability-deploy.md"
+category: "specs"
+---
+
+> Source: `orgs/octave-commons/shibboleth/specs/drafts/remote-ui-observability-deploy.md`
+> Migrated-to-kanban: `orgs/octave-commons/shibboleth/kanban/drafts/remote-ui-observability-deploy.md`
+
 # Remote UI observability + deploy for shibboleth.promethean.rest
 
 ## Goal

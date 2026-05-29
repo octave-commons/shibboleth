@@ -1,3 +1,17 @@
+---
+uuid: "orgs-octave-commons-shibboleth-kanban-orgs-octave-commons-shibboleth-specs-drafts-manual-chat-label-lab-md"
+title: "Manual chat labeling lab"
+status: incoming
+priority: P3
+labels: ["specs", "migrated-spec"]
+created_at: "2026-05-29T04:01:16.857Z"
+source: "orgs/octave-commons/shibboleth/specs/drafts/manual-chat-label-lab.md"
+category: "specs"
+---
+
+> Source: `orgs/octave-commons/shibboleth/specs/drafts/manual-chat-label-lab.md`
+> Migrated-to-kanban: `orgs/octave-commons/shibboleth/kanban/drafts/manual-chat-label-lab.md`
+
 # Manual chat labeling lab
 
 ## Goal

@@ -1,3 +1,17 @@
+---
+uuid: "orgs-octave-commons-shibboleth-kanban-orgs-octave-commons-shibboleth-specs-drafts-eval-judge-cache-md"
+title: "Eval runner judge cache"
+status: incoming
+priority: P3
+labels: ["specs", "migrated-spec"]
+created_at: "2026-05-29T04:01:16.842Z"
+source: "orgs/octave-commons/shibboleth/specs/drafts/eval-judge-cache.md"
+category: "specs"
+---
+
+> Source: `orgs/octave-commons/shibboleth/specs/drafts/eval-judge-cache.md`
+> Migrated-to-kanban: `orgs/octave-commons/shibboleth/kanban/drafts/eval-judge-cache.md`
+
 # Eval runner judge cache
 
 ## Goal

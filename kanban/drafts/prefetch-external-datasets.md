@@ -1,3 +1,17 @@
+---
+uuid: "orgs-octave-commons-shibboleth-kanban-orgs-octave-commons-shibboleth-specs-drafts-prefetch-external-datasets-md"
+title: "Prefetch external datasets (HF/GitHub) for later multilingual translation + refusal-policy evaluation"
+status: incoming
+priority: P3
+labels: ["specs", "migrated-spec"]
+created_at: "2026-05-29T04:01:16.851Z"
+source: "orgs/octave-commons/shibboleth/specs/drafts/prefetch-external-datasets.md"
+category: "specs"
+---
+
+> Source: `orgs/octave-commons/shibboleth/specs/drafts/prefetch-external-datasets.md`
+> Migrated-to-kanban: `orgs/octave-commons/shibboleth/kanban/drafts/prefetch-external-datasets.md`
+
 # Prefetch external datasets (HF/GitHub) for later multilingual translation + refusal-policy evaluation
 
 Created: 2026-03-15

@@ -1,3 +1,17 @@
+---
+uuid: "orgs-octave-commons-shibboleth-kanban-orgs-octave-commons-shibboleth-specs-drafts-experimental-framework-v1-md"
+title: "Experimental framework v1 (paper track B)"
+status: incoming
+priority: P3
+labels: ["specs", "migrated-spec"]
+created_at: "2026-05-29T04:01:16.856Z"
+source: "orgs/octave-commons/shibboleth/specs/drafts/experimental-framework-v1.md"
+category: "specs"
+---
+
+> Source: `orgs/octave-commons/shibboleth/specs/drafts/experimental-framework-v1.md`
+> Migrated-to-kanban: `orgs/octave-commons/shibboleth/kanban/drafts/experimental-framework-v1.md`
+
 # Experimental framework v1 (paper track B)
 
 Created: 2026-03-15

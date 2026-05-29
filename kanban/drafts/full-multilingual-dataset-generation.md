@@ -1,3 +1,17 @@
+---
+uuid: "orgs-octave-commons-shibboleth-kanban-orgs-octave-commons-shibboleth-specs-drafts-full-multilingual-dataset-generation-md"
+title: "Full multilingual dataset generation (v1)"
+status: incoming
+priority: P3
+labels: ["specs", "migrated-spec"]
+created_at: "2026-05-29T04:01:16.853Z"
+source: "orgs/octave-commons/shibboleth/specs/drafts/full-multilingual-dataset-generation.md"
+category: "specs"
+---
+
+> Source: `orgs/octave-commons/shibboleth/specs/drafts/full-multilingual-dataset-generation.md`
+> Migrated-to-kanban: `orgs/octave-commons/shibboleth/kanban/drafts/full-multilingual-dataset-generation.md`
+
 # Full multilingual dataset generation (v1)
 
 Created: 2026-03-14

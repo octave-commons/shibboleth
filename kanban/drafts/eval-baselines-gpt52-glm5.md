@@ -1,3 +1,17 @@
+---
+uuid: "orgs-octave-commons-shibboleth-kanban-orgs-octave-commons-shibboleth-specs-drafts-eval-baselines-gpt52-glm5-md"
+title: "Eval baselines: gpt-5.2 vs glm-5"
+status: incoming
+priority: P3
+labels: ["specs", "migrated-spec"]
+created_at: "2026-05-29T04:01:16.843Z"
+source: "orgs/octave-commons/shibboleth/specs/drafts/eval-baselines-gpt52-glm5.md"
+category: "specs"
+---
+
+> Source: `orgs/octave-commons/shibboleth/specs/drafts/eval-baselines-gpt52-glm5.md`
+> Migrated-to-kanban: `orgs/octave-commons/shibboleth/kanban/drafts/eval-baselines-gpt52-glm5.md`
+
 # Eval baselines: gpt-5.2 vs glm-5
 
 ## Goal

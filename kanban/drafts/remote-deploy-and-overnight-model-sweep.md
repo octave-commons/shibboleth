@@ -1,3 +1,17 @@
+---
+uuid: "orgs-octave-commons-shibboleth-kanban-orgs-octave-commons-shibboleth-specs-drafts-remote-deploy-and-overnight-model-sweep-md"
+title: "Remote deploy + overnight model sweep"
+status: incoming
+priority: P3
+labels: ["specs", "migrated-spec"]
+created_at: "2026-05-29T04:01:16.849Z"
+source: "orgs/octave-commons/shibboleth/specs/drafts/remote-deploy-and-overnight-model-sweep.md"
+category: "specs"
+---
+
+> Source: `orgs/octave-commons/shibboleth/specs/drafts/remote-deploy-and-overnight-model-sweep.md`
+> Migrated-to-kanban: `orgs/octave-commons/shibboleth/kanban/drafts/remote-deploy-and-overnight-model-sweep.md`
+
 # Remote deploy + overnight model sweep
 
 Created: 2026-03-20

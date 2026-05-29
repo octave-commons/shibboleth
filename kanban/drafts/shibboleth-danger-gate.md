@@ -1,3 +1,17 @@
+---
+uuid: "orgs-octave-commons-shibboleth-kanban-orgs-octave-commons-shibboleth-specs-drafts-shibboleth-danger-gate-md"
+title: "Shibboleth danger-gate in AGENTS contract"
+status: incoming
+priority: P3
+labels: ["specs", "migrated-spec"]
+created_at: "2026-05-29T04:01:16.855Z"
+source: "orgs/octave-commons/shibboleth/specs/drafts/shibboleth-danger-gate.md"
+category: "specs"
+---
+
+> Source: `orgs/octave-commons/shibboleth/specs/drafts/shibboleth-danger-gate.md`
+> Migrated-to-kanban: `orgs/octave-commons/shibboleth/kanban/drafts/shibboleth-danger-gate.md`
+
 # Shibboleth danger-gate in AGENTS contract
 
 ## Goal
