@@ -146,6 +146,15 @@
     ["/chat/schema" {:get (fn [_]
                              (ok (chat-lab/schema)))}]
 
+    ["/chat/import" {:post (fn [{:keys [body-params]}]
+                              (try
+                                (ok {:session (chat-lab/import-session! body-params)})
+                                (catch clojure.lang.ExceptionInfo e
+                                  (bad-request {:error (.getMessage e)
+                                                :data (ex-data e)}))
+                                (catch Exception e
+                                  (bad-request {:error (.getMessage e)}))))}]
+
     ["/chat/sessions" {:get (fn [_]
                                (ok {:sessions (chat-lab/list-sessions)}))
                         :post (fn [{:keys [body-params]}]

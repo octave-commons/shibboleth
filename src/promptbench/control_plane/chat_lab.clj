@@ -291,6 +291,46 @@
     (save-session! session)
     session))
 
+(defn- imported-chat-item [index item]
+  (let [role (some-> (:role item) str str/lower-case)
+        content (str (or (:content item) ""))
+        created-at (or (:created_at item) (now-iso))
+        metadata (when (map? (:metadata item)) (:metadata item))
+        base (cond-> {:id (next-id)
+                      :kind :message
+                      :role role
+                      :content content
+                      :created_at created-at
+                      :imported true
+                      :import_order index}
+               metadata (assoc :metadata metadata))]
+    (case role
+      "user" (assoc base :labels {:harm_category nil})
+      "assistant" (assoc base :labels {:response_class nil})
+      nil)))
+
+(defn import-session! [payload]
+  (let [imported-items (->> (:items payload)
+                            (map-indexed imported-chat-item)
+                            (filter some?)
+                            vec)]
+    (when-not (seq imported-items)
+      (throw (ex-info "import requires at least one user or assistant item" {:item_count 0})))
+    (let [id (or (:id payload) (str "handoff-" (next-id)))
+          session {:id id
+                   :created_at (now-iso)
+                   :updated_at (now-iso)
+                   :model (or (:model payload) "ragussy-handoff")
+                   :system_prompt (or (:system_prompt payload)
+                                      "Imported transcript from Ragussy for safety review and labeling.")
+                   :fake_tools_enabled (boolean (get payload :fake_tools_enabled false))
+                   :source {:app (or (:source_app payload) "ragussy")
+                            :provider (:provider payload)
+                            :conversation_id (:conversation_id payload)}
+                   :items imported-items}]
+      (save-session! session)
+      session)))
+
 (defn get-session [id]
   (parse-edn-file-safe (session-path id)))
 

@@ -119,6 +119,8 @@ export function ChatLab() {
   const [sessionExport, setSessionExport] = useState<SessionExport | null>(null)
   const [globalExport, setGlobalExport] = useState<GlobalExport | null>(null)
   const [snapshotInfo, setSnapshotInfo] = useState<Record<string, unknown> | null>(null)
+  const requestedSessionId = useMemo(() => new URLSearchParams(window.location.search).get('session'), [])
+  const [requestedSessionApplied, setRequestedSessionApplied] = useState(false)
 
   const harmCategories = schema?.harm_categories ?? []
   const responseClasses = schema?.response_classes ?? []
@@ -170,6 +172,15 @@ export function ChatLab() {
     }, 2500)
     return () => clearInterval(timer)
   }, [activeId])
+
+  useEffect(() => {
+    if (requestedSessionApplied || !requestedSessionId || sessions.length === 0) return
+    if (!sessions.some((session) => session.id === requestedSessionId)) return
+    setActiveId(requestedSessionId)
+    void refreshActive(requestedSessionId)
+    void refreshExports(requestedSessionId)
+    setRequestedSessionApplied(true)
+  }, [requestedSessionApplied, requestedSessionId, sessions])
 
   const fakeToolNames = useMemo(() => {
     return (schema?.fake_tools ?? [])
